@@ -1,0 +1,525 @@
+/* ==========================================================================
+   GLOBAL VARIABLES & THEME (Modern Clean UI)
+   ========================================================================== */
+:root {
+    --dash-bg: #f8f9fa;
+    --dash-sidebar: #ffffff;
+    --dash-topbar: #ffffff;
+    --dash-card-bg: #ffffff;
+    --dash-text-main: #334155;
+    --dash-text-muted: #64748b;
+    --dash-primary: #2563eb;
+    --dash-primary-hover: #1d4ed8;
+    --dash-border: #e2e8f0;
+    --dash-card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    --dash-hover-bg: #f1f5f9;
+    --dash-input-bg: #ffffff;
+    
+    --sidebar-width: 200px;
+    --topbar-height: 65px;
+}
+
+/* ==========================================================================
+   DARK MODE THEME VARIABLES
+   ========================================================================== */
+body.dark-mode,
+[data-bs-theme="dark"] body {
+    --dash-bg: #0f172a;
+    --dash-sidebar: #1e293b;
+    --dash-topbar: #1e293b;
+    --dash-card-bg: #1e293b;
+    --dash-text-main: #f8fafc;
+    --dash-text-muted: #94a3b8;
+    --dash-primary: #3b82f6;
+    --dash-primary-hover: #60a5fa;
+    --dash-border: #334155;
+    --dash-card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.25);
+    --dash-hover-bg: #334155;
+    --dash-input-bg: #0f172a;
+}
+
+/* ==========================================================================
+   TYPOGRAPHY & BODY
+   ========================================================================== */
+body {
+    background-color: var(--dash-bg);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--dash-text-main);
+    font-size: 14px;
+    overflow-x: hidden;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* ==========================================================================
+   CUSTOM UI REFINEMENTS: SIDEBAR, HAMBURGER, & VISIT SITE
+   ========================================================================== */
+
+/* 1. Sidebar dibuat lebih compact (jarak antar menu lebih rapat & rapi) */
+.wp-sidebar {
+    width: 240px; /* Lebar sidebar sedikit disusutkan agar lebih ringkas */
+}
+.wp-content-wrapper {
+    margin-left: 240px;
+}
+.topbar-wrapper {
+    left: 240px;
+}
+.wp-sidebar .nav-link {
+    padding: 7px 12px; /* Mengurangi padding vertikal dan horizontal */
+    margin: 1px 10px;
+    font-size: 12px;
+}
+
+/* 2. Tombol Hamburger & Visit Site di Topbar agar lebih rapi, modern, & estetik */
+.topbar-wrapper .btn,
+.topbar-wrapper button,
+.topbar-wrapper a.btn {
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--dash-border);
+    background-color: var(--dash-card-bg);
+    color: var(--dash-text-main);
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+/* Efek hover untuk tombol di topbar (termasuk hamburger & visit site) */
+.topbar-wrapper .btn:hover,
+.topbar-wrapper button:hover,
+.topbar-wrapper a.btn:hover {
+    background-color: var(--dash-hover-bg);
+    color: var(--dash-primary);
+    border-color: var(--dash-border);
+    transform: translateY(-1px);
+}
+
+/* Khusus tombol hamburger agar bentuknya simetris dan rapi */
+.topbar-wrapper button[onclick*="toggleSidebar"],
+.topbar-wrapper .hamburger-btn {
+    width: 38px;
+    height: 38px;
+    padding: 0;
+}
+
+/* 3. Penyesuaian Bagian Upgrade / Card Promosi di dalam Sidebar agar Lebih Kecil */
+.wp-sidebar .sidebar-upgrade,
+.wp-sidebar .card,
+.wp-sidebar .alert,
+.wp-sidebar .upgrade-box {
+    font-size: 11px !important;
+    border-radius: 8px !important;
+}
+
+.wp-sidebar .sidebar-upgrade h5,
+.wp-sidebar .card h5,
+.wp-sidebar .upgrade-box h6 {
+    font-size: 12px !important;
+    margin-bottom: 4px !important;
+}
+
+.wp-sidebar .sidebar-upgrade p,
+.wp-sidebar .card p,
+.wp-sidebar .upgrade-box p {
+    font-size: 10px !important;
+    line-height: 1.3 !important;
+    margin-bottom: 8px !important;
+}
+
+.wp-sidebar .sidebar-upgrade .btn,
+.wp-sidebar .card .btn,
+.wp-sidebar .upgrade-box .btn {
+    padding: 3px 8px !important;
+    font-size: 11px !important;
+}
+
+/* ==========================================================================
+   LAYOUT STRUCTURE (Sidebar & Content Wrapper)
+   ========================================================================== */
+.wp-sidebar {
+    background-color: var(--dash-sidebar);
+    width: var(--sidebar-width);
+    position: fixed;
+    top: 0; 
+    bottom: 0;
+    left: 0;
+    z-index: 100;
+    overflow-y: auto;
+    padding-top: 15px;
+    border-right: 1px solid var(--dash-border);
+    transition: transform 0.3s ease, width 0.3s ease, background-color 0.2s ease;
+}
+
+.wp-sidebar::-webkit-scrollbar {
+    width: 6px;
+}
+.wp-sidebar::-webkit-scrollbar-thumb {
+    background-color: var(--dash-border);
+    border-radius: 10px;
+}
+
+.wp-content-wrapper {
+    margin-left: var(--sidebar-width);
+    margin-top: var(--topbar-height);
+    padding: 25px 30px;
+    transition: margin-left 0.3s ease;
+}
+
+/* ==========================================================================
+   TOPBAR POSITIONING
+   ========================================================================== */
+.topbar-wrapper {
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: var(--sidebar-width);
+    height: var(--topbar-height);
+    z-index: 1030;
+    transition: left 0.3s ease, background-color 0.2s ease;
+}
+
+/* Penyesuaian saat sidebar ditutup atau di layar HP */
+body.sidebar-collapsed .topbar-wrapper {
+    left: 0;
+}
+
+@media(max-width: 768px) {
+    .topbar-wrapper {
+        left: 0;
+    }
+}
+
+/* ==========================================================================
+   NAVIGATION LINKS (Sidebar Menus)
+   ========================================================================== */
+.wp-sidebar .nav-link {
+    color: var(--dash-text-muted);
+    padding: 3px!important;
+    margin: 2px 5px!important; /* Memberi jarak agar membentuk tombol pill */
+    font-size: 11px;
+    border-radius: 8px; /* Sudut membulat */
+    transition: all .15s ease;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+}
+
+.wp-sidebar .nav-link i {
+    font-size: 0.7rem;
+    margin-right: 10px;
+}
+
+.wp-sidebar .nav-link:hover {
+    background-color: var(--dash-hover-bg);
+    color: var(--dash-primary);
+}
+
+.wp-sidebar .nav-link.active {
+    background-color: rgba(37, 99, 235, 0.15) !important;
+    color: var(--dash-primary) !important;
+    font-weight: 600;
+}
+
+/* ==========================================================================
+   COMPONENTS (Cards, Buttons, Tables)
+   ========================================================================== */
+.wp-card {
+    background: var(--dash-card-bg);
+    border: 1px solid var(--dash-border);
+    box-shadow: var(--dash-card-shadow);
+    border-radius: 12px;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.wp-btn-primary {
+    background-color: var(--dash-primary);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-weight: 500;
+    padding: 8px 16px;
+    transition: all 0.2s ease;
+}
+
+.wp-btn-primary:hover {
+    background-color: var(--dash-primary-hover);
+    color: #fff;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
+}
+
+.wp-btn-secondary {
+    background-color: var(--dash-hover-bg);
+    color: var(--dash-text-main);
+    border: 1px solid var(--dash-border);
+    border-radius: 8px;
+    font-weight: 500;
+    padding: 8px 16px;
+    transition: all 0.2s ease;
+}
+
+.wp-btn-secondary:hover {
+    background-color: var(--dash-border);
+    border-color: var(--dash-text-muted);
+    color: var(--dash-text-main);
+}
+
+.wp-table th {
+    background-color: var(--dash-bg);
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--dash-text-muted);
+    border-bottom: 1px solid var(--dash-border);
+    padding: 13px 0px;
+}
+
+.wp-table td {
+    vertical-align: middle;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--dash-border);
+    font-size: 14px;
+    color: var(--dash-text-main);
+}
+
+.hover-bg:hover {
+    background-color: var(--dash-hover-bg) !important;
+}
+
+.code-editor {
+    font-family: Consolas, Monaco, monospace;
+    font-size: 13px;
+    background: #1e293b; /* Warna gelap kebiruan modern */
+    color: #f8fafc;
+    border-radius: 8px;
+}
+
+/* ==========================================================================
+   MOBILE RESPONSIVENESS
+   ========================================================================== */
+body.sidebar-collapsed .wp-sidebar { transform: translateX(-260px); }
+body.sidebar-collapsed .wp-content-wrapper { margin-left: 0 !important; }
+
+@media(max-width: 768px) {
+    .wp-sidebar { transform: translateX(-260px); }
+    body.sidebar-mobile-open .wp-sidebar { transform: translateX(0); }
+    .wp-content-wrapper { margin-left: 0 !important; padding: 15px; }
+}
+
+/* ==========================================================================
+   ZERO DELAY ROLE HIDING (CSS GUARD)
+   ========================================================================== */
+body:not([data-role="administrator"]) [data-bs-target="#tab-settings"],
+body:not([data-role="administrator"]) [data-bs-target="#tab-components"],
+body:not([data-role="administrator"]) [data-bs-target="#tab-widgets"],
+body:not([data-role="administrator"]) [data-bs-target="#tab-blocks"],
+body:not([data-role="administrator"]) [data-bs-target="#tab-users"],
+body:not([data-role="administrator"]) [data-bs-target="#tab-redirects"],
+body:not([data-role="administrator"]) [data-bs-target="#tab-backup"],
+body:not([data-role="administrator"]) [data-bs-target="#tab-github-files"],
+body:not([data-role="administrator"]) [data-bs-target="#tab-categories"],
+body:not([data-role="administrator"]) #syncBtn {
+    display: none !important;
+}
+body:not(.tab-ready) .tab-content > .tab-pane {
+    display: none !important;
+}
+
+body[data-role="contributor"] button[onclick*="saveNewGitHubPost('published')"],
+body[data-role="contributor"] .btn-publish,
+body[data-role="contributor"] [onclick*="action=='publish'"],
+body[data-role="contributor"] [onclick*="publishPost"] {
+    display: none !important;
+}
+
+#githubPostsTableBody td .fw-bold.text-dark,
+#githubPostsTableBody td span,
+#githubPostsTableBody td span small,
+#githubPostsTableBody td small {
+    font-size: 13px !important;
+}
+
+td i {
+    font-size: 12px !important;
+}
+
+.wp-table td:nth-child(2) { width: 45% !important; }
+
+body.role-non-admin a[href="/settings"],
+body.role-non-admin a[href="/backup"],
+body.role-non-admin a[href="/redirects"],
+body.role-non-admin a[href="/components"],
+body.role-non-admin a[href="/widgets"],
+body.role-non-admin a[href="/blocks"],
+body.role-non-admin a[href="/images"],
+body.role-non-admin a[href="/categories"],
+body.role-non-admin a[href="/files"],
+body.role-non-admin #subtab-list-btn, 
+body.role-non-admin #subtab-list,
+body.role-non-admin [data-i18n="users_desc"], 
+body.role-non-admin button#btnAddUser,
+body.role-non-admin button#purgecache {
+    display: none !important;
+}
+
+/* Lindungi seluruh area GrapesJS dari gaya global Bootstrap */
+#gjs-wrapper {
+    all: initial;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+#gjs-wrapper *, #gjs-wrapper *::before, #gjs-wrapper *::after {
+    box-sizing: border-box;
+}
+#gjs-wrapper button {
+    cursor: pointer;
+}
+
+.tags-input-container {
+    display: flex;
+    flex-wrap: wrap; /* Memaksa elemen turun ke baris baru jika penuh */
+    align-items: center;
+    border: 1px solid var(--dash-border);
+    padding: 5px;
+    border-radius: 4px;
+    min-height: 42px;
+    background-color: var(--dash-input-bg);
+    color: var(--dash-text-main);
+    cursor: text;
+}
+
+.tag-chip {
+    background-color: var(--dash-hover-bg);
+    color: var(--dash-text-main);
+    padding: 5px 10px;
+    margin: 3px 5px 3px 0;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid var(--dash-border);
+}
+
+.tag-chip .close-btn {
+    margin-left: 8px;
+    cursor: pointer;
+    font-weight: bold;
+    color: var(--dash-text-muted);
+    font-size: 14px;
+}
+
+.tag-chip .close-btn:hover {
+    color: #ef4444;
+}
+
+.tags-input-container input {
+    border: none;
+    outline: none;
+    flex-grow: 1;
+    padding: 5px;
+    font-size: 14px;
+    min-width: 150px;
+    background: transparent;
+    color: var(--dash-text-main);
+}
+
+/* Custom Tab Styling */
+.settings-tabs .nav-link { color: var(--dash-text-muted); border: none; border-bottom: 2px solid transparent; padding: 12px 24px; font-weight: 500; transition: all 0.2s; }
+.settings-tabs .nav-link:hover { color: var(--dash-primary); }
+.settings-tabs .nav-link.active { color: var(--dash-primary); border-bottom: 2px solid var(--dash-primary); background: transparent; font-weight: 600; }
+.settings-tabs { border-bottom: 1px solid var(--dash-border); margin-bottom: 25px; }
+.secret-input::placeholder { letter-spacing: 2px; }
+
+/* ==========================================================================
+   BOOTSTRAP COMPONENT OVERRIDES FOR DARK MODE
+   ========================================================================== */
+body.dark-mode .bg-white,
+body.dark-mode .bg-light,
+body.dark-mode header.topbar-wrapper,
+body.dark-mode #syncProgressContainer {
+    background-color: var(--dash-card-bg) !important;
+    color: var(--dash-text-main) !important;
+}
+
+body.dark-mode .text-dark,
+body.dark-mode #githubPostsTableBody td .fw-bold.text-dark {
+    color: var(--dash-text-main) !important;
+}
+
+body.dark-mode .text-muted,
+body.dark-mode .text-secondary {
+    color: var(--dash-text-muted) !important;
+}
+
+body.dark-mode .border,
+body.dark-mode .border-bottom,
+body.dark-mode .border-top,
+body.dark-mode .border-start,
+body.dark-mode .border-end {
+    border-color: var(--dash-border) !important;
+}
+
+body.dark-mode .card,
+body.dark-mode .modal-content,
+body.dark-mode .dropdown-menu {
+    background-color: var(--dash-card-bg) !important;
+    color: var(--dash-text-main) !important;
+    border-color: var(--dash-border) !important;
+    box-shadow: var(--dash-card-shadow) !important;
+}
+
+body.dark-mode .dropdown-item {
+    color: var(--dash-text-main) !important;
+}
+
+body.dark-mode .dropdown-item:hover,
+body.dark-mode .dropdown-item:focus {
+    background-color: var(--dash-hover-bg) !important;
+    color: var(--dash-primary) !important;
+}
+
+body.dark-mode .dropdown-divider {
+    border-color: var(--dash-border) !important;
+}
+
+body.dark-mode .dropdown-header {
+    color: var(--dash-text-muted) !important;
+}
+
+body.dark-mode .form-control,
+body.dark-mode .form-select,
+body.dark-mode .input-group-text {
+    background-color: var(--dash-input-bg) !important;
+    color: var(--dash-text-main) !important;
+    border-color: var(--dash-border) !important;
+}
+
+body.dark-mode .form-control::placeholder {
+    color: var(--dash-text-muted) !important;
+}
+
+body.dark-mode .table,
+body.dark-mode .wp-table {
+    color: var(--dash-text-main) !important;
+}
+
+body.dark-mode .table th,
+body.dark-mode .table td {
+    background-color: var(--dash-card-bg) !important;
+    color: var(--dash-text-main) !important;
+    border-color: var(--dash-border) !important;
+}
+
+body.dark-mode .btn-light {
+    background-color: var(--dash-hover-bg) !important;
+    color: var(--dash-text-main) !important;
+    border-color: var(--dash-border) !important;
+}
+
+body.dark-mode .btn-light:hover {
+    background-color: var(--dash-border) !important;
+    color: var(--dash-primary) !important;
+}
