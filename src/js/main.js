@@ -367,7 +367,7 @@ function updateQuickStats(clients) {
 function renderClientsTable(clients) {
     const tbody = document.getElementById('clientsBody');
     tbody.innerHTML = '';
-    if(!clients || clients.length === 0) {
+    if (!clients || clients.length === 0) {
         tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Tidak ada klien yang cocok.</td></tr>';
         return;
     }
@@ -376,12 +376,6 @@ function renderClientsTable(clients) {
         window.clientDataStore[client.worker_name] = client.settings;
         
         const domainLink = client.domain ? `<a href="https://${client.domain}" target="_blank" style="color:var(--info); font-weight:600; text-decoration:none;">${client.domain}</a>` : '-';
-        const adminLink = client.domain ? `<a href="https://admin.${client.domain}" target="_blank" class="btn btn-outline" style="font-size:11.5px; padding:4px 8px;">🔗 Buka Admin</a>` : '';
-        const settingsBtn = `<button class="btn btn-outline" style="font-size:11.5px; padding:4px 8px;" onclick="showSettingsModal('${client.worker_name}')">⚙️ Config</button>`;
-        const editCredBtn = `<button class="btn btn-outline" style="font-size:11.5px; padding:4px 8px;" onclick="openEditCredentialsModal('${client.worker_name}')">🔑 Credentials</button>`;
-        const syncBtn = `<button class="btn btn-success" style="font-size:11.5px; padding:4px 8px;" onclick="syncIndividualClient('${client.worker_name}')">🔄 Sync Client</button>`;
-        const deleteBtn = `<button class="btn btn-danger" style="font-size:11.5px; padding:4px 8px;" onclick="deleteClientCompletely('${client.worker_name}')">💣 Nuke / Delete Total</button>`;
-        
         const clientStatus = (client.account_status || 'active').toLowerCase();
         let badgeClass = 'badge-active';
         let badgeLabel = clientStatus;
@@ -390,10 +384,10 @@ function renderClientsTable(clients) {
             badgeClass = 'badge-deploying';
         } else if (clientStatus === 'suspicious_domain') {
             badgeClass = 'badge-suspicious';
-            badgeLabel = '🚨 SUSPICIOUS DOMAIN';
+            badgeLabel = '🚨 SUSPICIOUS';
         }
 
-        // --- Render Kuota & Usage Metrics ---
+        // Render Kuota & Usage Metrics
         let usageHtml = '<span style="color:var(--text-muted); font-size:11px;">Belum diaudit</span>';
         let parsedSettings = {};
         try { parsedSettings = JSON.parse(client.settings || "{}"); } catch(e){}
@@ -406,7 +400,7 @@ function renderClientsTable(clients) {
             const ghMins = stats.github ? `${stats.github.minutes_used || 0}m` : '-';
 
             usageHtml = `
-                <div style="font-size:11.5px; line-height:1.4;">
+                <div style="font-size:11px; line-height:1.4;">
                     ⚡ <b>CPU:</b> ${workerCpu}<br>
                     📦 <b>KV:</b> ${kvReads}R / ${kvWrites}W<br>
                     🐙 <b>GH:</b> ${ghMins}
@@ -414,9 +408,25 @@ function renderClientsTable(clients) {
             `;
         }
 
+        // Tombol Aksi Grid 2 Kolom Ringkas
         const inspectBtn = (clientStatus === 'suspicious_domain') 
-            ? `<button class="btn btn-warning" style="font-size:11.5px; padding:4px 8px;" onclick="inspectClientAudit('${client.worker_name}')">🔍 Cek Bukti Mismatch</button>` 
+            ? `<button class="btn btn-warning btn-full" onclick="inspectClientAudit('${client.worker_name}')">🔍 Cek Mismatch</button>` 
             : '';
+
+        const adminBtn = client.domain 
+            ? `<a href="https://admin.${client.domain}" target="_blank" class="btn btn-outline btn-full">🔗 Buka Admin</a>` 
+            : '';
+
+        const actionGrid = `
+            <div class="btn-action-grid">
+                ${inspectBtn}
+                ${adminBtn}
+                <button class="btn btn-outline" onclick="showSettingsModal('${client.worker_name}')">⚙️ Config</button>
+                <button class="btn btn-outline" onclick="openEditCredentialsModal('${client.worker_name}')">🔑 Pass/PAT</button>
+                <button class="btn btn-success btn-full" onclick="syncIndividualClient('${client.worker_name}')">🔄 Sync Client</button>
+                <button class="btn btn-danger btn-full" onclick="deleteClientCompletely('${client.worker_name}')">💣 Nuke / Delete</button>
+            </div>
+        `;
 
         const row = document.createElement('tr');
         if (clientStatus === 'suspicious_domain') {
@@ -426,26 +436,17 @@ function renderClientsTable(clients) {
         row.innerHTML = `
             <td><strong>#${client.id}</strong></td>
             <td>
-                <strong style="font-size:14px;">${escapeHtml(client.name)}</strong><br>
-                <small style="color:var(--text-muted);">${escapeHtml(client.email)}</small>
+                <strong style="font-size:13px;">${escapeHtml(client.name)}</strong><br>
+                <small style="color:var(--text-muted); font-size:11px;">${escapeHtml(client.email)}</small>
             </td>
             <td>
                 <code>${escapeHtml(client.worker_name)}</code><br>
-                <span style="font-size:11px; color:var(--text-muted);">${escapeHtml(client.dashboard_version || 'v1_blog')}</span>
+                <span style="font-size:10.5px; color:var(--text-muted);">${escapeHtml(client.dashboard_version || 'v1_blog')}</span>
             </td>
             <td>${domainLink}</td>
             <td>${usageHtml}</td>
             <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
-            <td>
-                <div class="btn-action-group">
-                    ${inspectBtn}
-                    ${adminLink}
-                    ${settingsBtn}
-                    ${editCredBtn}
-                    ${syncBtn}
-                    ${deleteBtn}
-                </div>
-            </td>
+            <td>${actionGrid}</td>
         `;
         tbody.appendChild(row);
     });
@@ -1132,3 +1133,26 @@ async function executeSystemAction(endpoint, actionName, btnId) {
         btn.textContent = originalText;
     }
 }
+
+function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            if (window.innerWidth <= 992) {
+                sidebar.classList.toggle('mobile-open');
+                overlay.classList.toggle('active');
+            } else {
+                sidebar.classList.toggle('collapsed');
+            }
+        }
+
+        // Auto Close Sidebar di Mobile saat pilih tab
+        const originalSwitchTab = window.switchTab;
+        window.switchTab = function(tabId) {
+            if (typeof originalSwitchTab === 'function') {
+                originalSwitchTab(tabId);
+            }
+            if (window.innerWidth <= 992) {
+                document.getElementById('sidebar').classList.remove('mobile-open');
+                document.getElementById('sidebarOverlay').classList.remove('active');
+            }
+        };
