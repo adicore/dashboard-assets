@@ -96,13 +96,6 @@ function setButtonLoading(btn, isLoading, loadingText = 'Saving...') {
     }
 }
 
-function clientSideMinify(html) {
-    if (!html) return "";
-    return html.replace(/<!--[\s\S]*?-->/gis, (match) => {
-        return (match.includes('LOOP') || match.includes('IF_HAS_CHILDREN') || match.includes('END_IF')) ? match : '';
-    }).replace(/>\s+</g, '><').replace(/\s{2,}/g, ' ').trim();
-}
-
 async function loadTopbarProfile() {
     try {
         const res = await fetch('/api/user/profile');
@@ -145,7 +138,7 @@ window.loadBlocks = async function() {
                     <th scope="col" class="py-3">Shortcode</th>
                     <th scope="col" class="py-3 text-end px-4">Action</th>
                 </tr>
-                </head>
+            </thead>
             <tbody>
                 `;
 
@@ -178,7 +171,7 @@ window.loadBlocks = async function() {
                                 <i class="bi bi-trash"></i>
                             </button>
                         </div>
-                        </td>
+                    </td>
                 </tr>`;
         });
 
@@ -206,9 +199,13 @@ window.createNewBlock = async function() {
     }
     
     try {
-        await fetch('/api/kv',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:'block:'+bId,content:'<div class="container py-3"><h3>'+bId+'</h3></div>'})});
+        await fetch('/api/kv', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ key: 'block:' + bId, content: '<div class="container py-3"><h3>' + bId + '</h3></div>' })
+        });
         setButtonLoading(btn, false);
-        showToast("New block component successfully created locally!");
+        showToast("New block component successfully created and saved to GitHub!");
         bootstrap.Modal.getInstance(document.getElementById('addBlockModal')).hide();
         loadBlocks();
     } catch(e) {
@@ -225,7 +222,6 @@ window.deleteBlock = async function(bId) {
     
     try {
         await fetch('/api/kv', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key:'block:'+bId, content:''})});
-        await fetch('/api/kv', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key:'block:'+bId+':data', content:''})});
         bulkModal.hide();
         showToast("Block successfully deleted!");
         loadBlocks();
@@ -255,7 +251,7 @@ window.renameBlock = async function(oldId) {
         bulkModal.hide();
         
         if (res.ok) {
-            showToast("Block name successfully changed locally!");
+            showToast("Block name successfully changed on GitHub!");
             loadBlocks();
         } else {
             showToast("Failed to change block name.", "danger");
@@ -306,7 +302,7 @@ window.renderRepeaterRows = function(items) {
     
     items.forEach((item, index) => {
         container.innerHTML += `
-        <div class="repeater-row wp-card p-3 bg-white border position-relative">
+        <div class="repeater-row wp-card p-3 bg-white border position-relative mb-3 rounded">
             <button type="button" class="btn-close position-absolute top-0 end-0 m-3" onclick="this.closest('.repeater-row').remove()"></button>
             <h6 class="fw-bold text-secondary small mb-3">Item #${index+1}</h6>
             <div class="row g-3">
@@ -327,7 +323,7 @@ window.addRepeaterRow = function() {
     if(container.querySelector('.text-muted')) container.innerHTML = "";
     
     container.insertAdjacentHTML('beforeend', `
-    <div class="repeater-row wp-card p-3 bg-white border position-relative">
+    <div class="repeater-row wp-card p-3 bg-white border position-relative mb-3 rounded">
         <button type="button" class="btn-close position-absolute top-0 end-0 m-3" onclick="this.closest('.repeater-row').remove()"></button>
         <h6 class="fw-bold text-secondary small mb-3">New Item</h6>
         <div class="row g-3">
@@ -360,23 +356,23 @@ window.saveDynamicBlockData = async function() {
     const alertBox = document.getElementById('repeaterAlert');
     if(alertBox) {
         alertBox.className = "alert alert-info py-1 px-3 mb-0 small";
-        alertBox.innerText = "Saving data locally...";
+        alertBox.innerText = "Saving data to GitHub...";
         alertBox.classList.remove('d-none');
     }
     
     try {
         const res = await fetch('/api/block-data', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {'Content-Type':'application/json'},
             body: JSON.stringify({blockId, items})
         });
         
         if(res.ok) {
             if(alertBox) {
                 alertBox.className = "alert alert-success py-1 px-3 mb-0 small";
-                alertBox.innerText = "Repeater data successfully saved locally!";
+                alertBox.innerText = "Repeater data successfully saved to GitHub!";
             }
-            showToast("Repeater block data successfully saved locally!");
+            showToast("Repeater block data successfully saved to GitHub!");
             setTimeout(() => bootstrap.Modal.getInstance(document.getElementById('dynamicBlockModal')).hide(), 1000);
         } else {
             throw new Error();
@@ -411,15 +407,8 @@ window.openEditor = async function(key, title) {
     
     let content = "Failed to load content.";
     try {
-        const resRaw = await fetch('/api/kv?key=' + encodeURIComponent(key + ':raw'));
-        if (resRaw.ok) {
-            const rawTxt = await resRaw.text();
-            if (rawTxt) content = rawTxt;
-        }
-        if (!content || content === "Failed to load content.") {
-            const res = await fetch('/api/kv?key=' + encodeURIComponent(key));
-            if (res.ok) content = await res.text();
-        }
+        const res = await fetch('/api/kv?key=' + encodeURIComponent(key));
+        if (res.ok) content = await res.text();
     } catch(e) {
         content = "Failed to load content.";
     }
@@ -444,29 +433,20 @@ window.closeCustomEditor = function() {
 
 window.saveEditorDataDualStorage = async function() {
     const btn = document.getElementById('btnSaveEditor');
-    setButtonLoading(btn, true, "Saving Locally...");
+    setButtonLoading(btn, true, "Saving to GitHub...");
     const key = document.getElementById('currentEditKey').value;
-    const rawContent = window.currentCodeMirrorInstance ? window.currentCodeMirrorInstance.getValue() : document.getElementById('htmlEditor').value;
+    const content = window.currentCodeMirrorInstance ? window.currentCodeMirrorInstance.getValue() : document.getElementById('htmlEditor').value;
     
     try {
-        // Save raw version locally to KV
-        await fetch('/api/kv', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ key: key + ':raw', content: rawContent })
-        });
-
-        // Save minified version locally to KV (without direct GitHub auto-sync)
-        const minifiedContent = clientSideMinify(rawContent);
         const res = await fetch('/api/kv', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ key, content: minifiedContent })
+            body: JSON.stringify({ key, content })
         });
 
         if(res.ok){
             setButtonLoading(btn, false);
-            showToast("Block HTML successfully saved locally!");
+            showToast("Block HTML successfully saved to GitHub!");
             setTimeout(() => {
                 closeCustomEditor();
                 loadBlocks();
