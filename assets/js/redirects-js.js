@@ -1,4 +1,4 @@
-// assets/js/redirects-js.min.js
+// assets/js/redirects-js.js
 
 // ==========================================
 // 1. GLOBAL UTILITIES, TRANSLATIONS & TOAST
