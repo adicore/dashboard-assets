@@ -1,4 +1,3 @@
-// main.js
 // ======= KONFIGURASI API PUSAT =======
 const API_BASE_URL = window.location.origin;
 // =====================================
@@ -14,6 +13,7 @@ let fetchedAuditLogsList = [];
 let remotePermissionGroups = [];
 let currentSavedPermissionIds = [];
 
+// --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
     const savedPwd = localStorage.getItem('pusat_api_password');
     if (savedPwd) {
@@ -31,44 +31,86 @@ window.addEventListener('keydown', (e) => {
     }
 });
 
-function togglePasswordVisibility(inputId) {
-    const input = document.getElementById(inputId);
-    input.type = input.type === 'password' ? 'text' : 'password';
+window.onclick = function(event) {
+    if (event.target && event.target.className === 'modal') {
+        event.target.style.display = "none";
+    }
+};
+
+// --- NAVIGATION & UI HELPERS ---
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    if (!sidebar) return;
+
+    if (window.innerWidth <= 992) {
+        sidebar.classList.toggle('mobile-open');
+        if (overlay) overlay.classList.toggle('active');
+    } else {
+        sidebar.classList.toggle('collapsed');
+    }
 }
 
 function switchTab(tabId) {
     document.querySelectorAll('.section').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.sidebar a').forEach(el => el.classList.remove('active'));
     
-    document.getElementById('section-' + tabId).classList.add('active');
-    document.getElementById('tab-' + tabId).classList.add('active');
+    const targetSection = document.getElementById('section-' + tabId);
+    const targetTab = document.getElementById('tab-' + tabId);
+    if (targetSection) targetSection.classList.add('active');
+    if (targetTab) targetTab.classList.add('active');
 
-    if(tabId === 'dashboard') fetchClients();
-    if(tabId === 'templates') fetchTemplates();
-    if(tabId === 'audit') fetchAuditLogs();
+    // Auto-close drawer sidebar di layar ponsel
+    if (window.innerWidth <= 992) {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebarOverlay');
+        if (sidebar) sidebar.classList.remove('mobile-open');
+        if (overlay) overlay.classList.remove('active');
+    }
+
+    if (tabId === 'dashboard') fetchClients();
+    if (tabId === 'templates') fetchTemplates();
+    if (tabId === 'audit') fetchAuditLogs();
 }
 
 function switchModalTab(panelId) {
     document.querySelectorAll('.modal-tab-btn').forEach(btn => btn.classList.remove('active'));
     document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
     
-    if (event && event.target) {
-        event.target.classList.add('active');
+    if (window.event && window.event.target) {
+        window.event.target.classList.add('active');
     }
-    document.getElementById(panelId).classList.add('active');
+    const targetPanel = document.getElementById(panelId);
+    if (targetPanel) targetPanel.classList.add('active');
+}
+
+function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) modal.style.display = 'none';
+}
+
+function togglePasswordVisibility(inputId) {
+    const input = document.getElementById(inputId);
+    if (input) input.type = input.type === 'password' ? 'text' : 'password';
 }
 
 function getPassword() {
     const pwd = document.getElementById('globalPassword').value;
-    if(!pwd) alert("Silakan isi Sandi API Admin terlebih dahulu.");
+    if (!pwd) alert("Silakan isi Sandi API Admin terlebih dahulu.");
     return pwd;
 }
 
 function escapeHtml(str) {
-    if(!str) return '';
-    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
 
+// --- TOKEN SCOPES MODAL ---
 async function openTokenScopeModal() {
     const pwd = getPassword();
     if (!pwd) return;
@@ -108,16 +150,16 @@ function renderScopeChecklist(items) {
 
     items.forEach(item => {
         const label = document.createElement('label');
-        label.style.cssText = 'display: flex; align-items: center; justify-content: space-between; font-size: 13px; cursor: pointer; padding: 6px 8px; border-bottom: 1px solid #eee; background: #fff; border-radius: 4px; margin: 0;';
+        label.style.cssText = 'display: flex; align-items: center; justify-content: space-between; font-size: 12px; cursor: pointer; padding: 6px 8px; border-bottom: 1px solid #eee; background: #fff; border-radius: 4px; margin: 0;';
         
         const isChecked = currentSavedPermissionIds.includes(item.id);
         
         label.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
                 <input type="checkbox" class="scope-checkbox" value="${item.id}" ${isChecked ? 'checked' : ''} onchange="updateSelectedScopeCount()">
                 <div>
                     <strong>${escapeHtml(item.name)}</strong><br>
-                    <small style="color: var(--text-muted); font-family: monospace; font-size: 11px;">${item.id}</small>
+                    <small style="color: var(--text-muted); font-family: monospace; font-size: 10.5px;">${item.id}</small>
                 </div>
             </div>
             <span class="badge" style="background: #f1f5f9; color: var(--text-main); font-size: 10px;">${escapeHtml(item.scopes ? item.scopes.join(', ') : 'Account')}</span>
@@ -188,144 +230,10 @@ async function executeMassScopeUpdate() {
     }
 }
 
-function showSettingsModal(workerName) {
-    const settingsStr = window.clientDataStore[workerName];
-    let parsed = {};
-    try { parsed = JSON.parse(settingsStr || "{}"); } catch(e){}
-    
-    document.getElementById('settingsModalTitle').textContent = `Pengaturan Klien: ${workerName}`;
-    document.getElementById('settingsPre').textContent = JSON.stringify(parsed, null, 2);
-    document.getElementById('settingsModal').style.display = 'block';
-}
-
-function openEditCredentialsModal(workerName) {
-    document.getElementById('editWorkerName').value = workerName;
-    document.getElementById('editCfToken').value = '';
-    document.getElementById('editGithubPat').value = '';
-    document.getElementById('editCredAlert').style.display = 'none';
-    document.getElementById('editModalTitle').textContent = `Edit Kredensial: ${workerName}`;
-    document.getElementById('editCredentialsModal').style.display = 'block';
-}
-
-function showAuditModal(auditId) {
-    const log = window.auditDataStore[auditId];
-    if(!log) return;
-    
-    let oldParsed = log.old_data, newParsed = log.new_data;
-    try { oldParsed = JSON.parse(log.old_data); } catch(e){}
-    try { newParsed = JSON.parse(log.new_data); } catch(e){}
-
-    document.getElementById('diffOld').textContent = typeof oldParsed === 'object' ? JSON.stringify(oldParsed, null, 2) : oldParsed;
-    document.getElementById('diffNew').textContent = typeof newParsed === 'object' ? JSON.stringify(newParsed, null, 2) : newParsed;
-    document.getElementById('auditModal').style.display = 'block';
-}
-
-function inspectClientAudit(workerName) {
-    switchTab('audit');
-    setTimeout(() => {
-        const searchInput = document.getElementById('auditSearchInput');
-        if (searchInput) {
-            searchInput.value = workerName;
-            filterAuditTable();
-        }
-    }, 250);
-}
-
-function closeModal(modalId) {
-    document.getElementById(modalId).style.display = 'none';
-}
-
-window.onclick = function(event) {
-    if (event.target && event.target.className === 'modal') {
-        event.target.style.display = "none";
-    }
-}
-
-// --- ASSET BUILDER HELPERS ---
-function handleAssetFileUpload(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    document.getElementById('assetFileName').value = file.name;
-    const reader = new FileReader();
-    reader.onload = function(evt) {
-        document.getElementById('assetFileContent').value = evt.target.result;
-    };
-    reader.readAsText(file);
-}
-
-function addOrUpdateAsset() {
-    const fileName = document.getElementById('assetFileName').value.trim();
-    const content = document.getElementById('assetFileContent').value;
-
-    if (!fileName) {
-        alert("Nama file asset wajib diisi!");
-        return;
-    }
-
-    if (editingAssetKey && editingAssetKey !== fileName) {
-        delete currentTemplateAssets[editingAssetKey];
-    }
-
-    currentTemplateAssets[fileName] = content;
-    resetAssetInputs();
-    renderAssetsTable();
-}
-
-function resetAssetInputs() {
-    document.getElementById('assetFileName').value = '';
-    document.getElementById('assetFileContent').value = '';
-    document.getElementById('assetFileUpload').value = '';
-    editingAssetKey = null;
-    document.getElementById('btnAddAsset').textContent = '➕ Add File Asset';
-    document.getElementById('btnCancelAssetEdit').style.display = 'none';
-}
-
-function editAsset(fileName) {
-    editingAssetKey = fileName;
-    document.getElementById('assetFileName').value = fileName;
-    document.getElementById('assetFileContent').value = currentTemplateAssets[fileName] || '';
-    document.getElementById('btnAddAsset').textContent = '💾 Update File';
-    document.getElementById('btnCancelAssetEdit').style.display = 'inline-flex';
-}
-
-function deleteAsset(fileName) {
-    if (confirm(`Hapus file asset '${fileName}'?`)) {
-        delete currentTemplateAssets[fileName];
-        if (editingAssetKey === fileName) resetAssetInputs();
-        renderAssetsTable();
-    }
-}
-
-function renderAssetsTable() {
-    const tbody = document.getElementById('assetsTableBody');
-    tbody.innerHTML = '';
-
-    const keys = Object.keys(currentTemplateAssets);
-    if (keys.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--text-muted);">Belum ada file asset ditambahkan.</td></tr>';
-        return;
-    }
-
-    keys.forEach(fileName => {
-        const contentPreview = (currentTemplateAssets[fileName] || '').substring(0, 60).replace(/\n/g, ' ') + '...';
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td><code>${escapeHtml(fileName)}</code></td>
-            <td><small style="color:var(--text-muted);">${escapeHtml(contentPreview)}</small></td>
-            <td style="text-align: center; white-space: nowrap;">
-                <button type="button" onclick="editAsset('${escapeHtml(fileName)}')" class="btn btn-outline" style="padding: 3px 8px; font-size: 11px;">✏️ Edit</button>
-                <button type="button" onclick="deleteAsset('${escapeHtml(fileName)}')" class="btn btn-danger" style="padding: 3px 8px; font-size: 11px;">🗑️</button>
-            </td>
-        `;
-        tbody.appendChild(row);
-    });
-}
-
-// --- FETCH KLIEN & RENDERING ---
+// --- CLIENT MONITORING ---
 async function fetchClients() {
     const pwd = getPassword();
-    if(!pwd) return;
+    if (!pwd) return;
 
     const tbody = document.getElementById('clientsBody');
     const alertBox = document.getElementById('tableAlert');
@@ -341,12 +249,12 @@ async function fetchClients() {
         });
         const data = await res.json();
 
-        if(!res.ok) throw new Error(data.error || "Gagal mengambil data klien.");
+        if (!res.ok) throw new Error(data.error || "Gagal mengambil data klien.");
 
         fetchedClientsList = data.data || [];
         updateQuickStats(fetchedClientsList);
         renderClientsTable(fetchedClientsList);
-    } catch(e) {
+    } catch (e) {
         tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color:var(--danger);">Gagal memuat data. Periksa sandi API admin Anda.</td></tr>';
         alertBox.className = 'alert error';
         alertBox.textContent = e.message;
@@ -367,6 +275,7 @@ function updateQuickStats(clients) {
 function renderClientsTable(clients) {
     const tbody = document.getElementById('clientsBody');
     tbody.innerHTML = '';
+
     if (!clients || clients.length === 0) {
         tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Tidak ada klien yang cocok.</td></tr>';
         return;
@@ -387,7 +296,6 @@ function renderClientsTable(clients) {
             badgeLabel = '🚨 SUSPICIOUS';
         }
 
-        // Render Kuota & Usage Metrics
         let usageHtml = '<span style="color:var(--text-muted); font-size:11px;">Belum diaudit</span>';
         let parsedSettings = {};
         try { parsedSettings = JSON.parse(client.settings || "{}"); } catch(e){}
@@ -408,7 +316,6 @@ function renderClientsTable(clients) {
             `;
         }
 
-        // Tombol Aksi Grid 2 Kolom Ringkas
         const inspectBtn = (clientStatus === 'suspicious_domain') 
             ? `<button class="btn btn-warning btn-full" onclick="inspectClientAudit('${client.worker_name}')">🔍 Cek Mismatch</button>` 
             : '';
@@ -450,6 +357,147 @@ function renderClientsTable(clients) {
         `;
         tbody.appendChild(row);
     });
+}
+
+function filterClientsTable() {
+    const query = document.getElementById('clientSearchInput').value.toLowerCase();
+    const filtered = fetchedClientsList.filter(c => 
+        (c.name && c.name.toLowerCase().includes(query)) ||
+        (c.email && c.email.toLowerCase().includes(query)) ||
+        (c.worker_name && c.worker_name.toLowerCase().includes(query)) ||
+        (c.domain && c.domain.toLowerCase().includes(query))
+    );
+    renderClientsTable(filtered);
+}
+
+function showSettingsModal(workerName) {
+    const settingsStr = window.clientDataStore[workerName];
+    let parsed = {};
+    try { parsed = JSON.parse(settingsStr || "{}"); } catch(e){}
+    
+    document.getElementById('settingsModalTitle').textContent = `Pengaturan Klien: ${workerName}`;
+    document.getElementById('settingsPre').textContent = JSON.stringify(parsed, null, 2);
+    document.getElementById('settingsModal').style.display = 'block';
+}
+
+function openEditCredentialsModal(workerName) {
+    document.getElementById('editWorkerName').value = workerName;
+    document.getElementById('editCfToken').value = '';
+    document.getElementById('editGithubPat').value = '';
+    document.getElementById('editCredAlert').style.display = 'none';
+    document.getElementById('editModalTitle').textContent = `Edit Kredensial: ${workerName}`;
+    document.getElementById('editCredentialsModal').style.display = 'block';
+}
+
+async function submitEditCredentials(e) {
+    e.preventDefault();
+    const pwd = getPassword();
+    if (!pwd) return;
+
+    const workerName = document.getElementById('editWorkerName').value;
+    const cfToken = document.getElementById('editCfToken').value;
+    const githubPat = document.getElementById('editGithubPat').value;
+    const alertBox = document.getElementById('editCredAlert');
+
+    alertBox.className = 'alert info';
+    alertBox.textContent = 'Menyimpan kredensial baru...';
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/update-client-credentials`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                adminPassword: pwd,
+                worker_name: workerName,
+                cf_token: cfToken,
+                github_pat: githubPat
+            })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Gagal memperbarui.");
+
+        alertBox.className = 'alert success';
+        alertBox.textContent = data.message;
+        setTimeout(() => {
+            closeModal('editCredentialsModal');
+            fetchClients();
+        }, 1200);
+    } catch (err) {
+        alertBox.className = 'alert error';
+        alertBox.textContent = err.message;
+    }
+}
+
+async function syncIndividualClient(workerName) {
+    const pwd = getPassword();
+    if (!pwd) return;
+
+    if (!confirm(`Jalankan full sinkronisasi ulang untuk '${workerName}'?`)) return;
+
+    const alertBox = document.getElementById('tableAlert');
+    alertBox.className = 'alert info';
+    alertBox.textContent = `Sedang menyinkronkan ${workerName}...`;
+    alertBox.style.display = 'block';
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/sync-client`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ adminPassword: pwd, worker_name: workerName })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Gagal sinkronisasi");
+        
+        alertBox.className = 'alert success';
+        alertBox.textContent = data.message;
+    } catch (err) {
+        alertBox.className = 'alert error';
+        alertBox.textContent = `Gagal sync ${workerName}: ${err.message}`;
+    }
+}
+
+async function deleteClientCompletely(workerName) {
+    const pwd = getPassword();
+    if (!pwd) return;
+
+    const confirmMsg = `⚠️ PERINGATAN HAPUS TOTAL (NUKE)!\n\n` +
+        `Anda akan MENGHAPUS TOTAL Seluruh Infrastruktur untuk klien: '${workerName}'\n\n` +
+        `Ini akan MENGHAPUS PERMANEN Worker, KV, D1, GitHub Repo, dan DNS.\n` +
+        `Ketikkan nama worker '${workerName}' untuk konfirmasi:`;
+
+    const userInput = prompt(confirmMsg);
+    if (userInput !== workerName) {
+        if (userInput !== null) alert("Konfirmasi batal: Nama worker tidak cocok.");
+        return;
+    }
+
+    const alertBox = document.getElementById('tableAlert');
+    alertBox.className = 'alert info';
+    alertBox.textContent = `MENGHAPUS TOTAL seluruh infrastruktur ${workerName}... Mohon tunggu 10-20 detik.`;
+    alertBox.style.display = 'block';
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/delete-client-completely`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ adminPassword: pwd, worker_name: workerName })
+        });
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error || "Gagal hapus total.");
+
+        let msg = "✅ HASIL NUKE / HAPUS TOTAL:\n" + data.message;
+        if (data.details && data.details.length > 0) {
+            msg += "\n\nRincian Tindakan:\n- " + data.details.join("\n- ");
+        }
+
+        alertBox.className = 'alert success';
+        alertBox.textContent = msg;
+        fetchClients();
+    } catch (err) {
+        alertBox.className = 'alert error';
+        alertBox.textContent = `GAGAL NUKE KLIEN:\n${err.message}`;
+    }
 }
 
 async function triggerUsageAudit() {
@@ -500,18 +548,7 @@ async function triggerUsageAudit() {
     }
 }
 
-function filterClientsTable() {
-    const query = document.getElementById('clientSearchInput').value.toLowerCase();
-    const filtered = fetchedClientsList.filter(c => 
-        (c.name && c.name.toLowerCase().includes(query)) ||
-        (c.email && c.email.toLowerCase().includes(query)) ||
-        (c.worker_name && c.worker_name.toLowerCase().includes(query)) ||
-        (c.domain && c.domain.toLowerCase().includes(query))
-    );
-    renderClientsTable(filtered);
-}
-
-// --- FETCH TEMPLATES & RENDERING ---
+// --- TEMPLATES MANAGEMENT ---
 async function fetchTemplates() {
     const tbody = document.getElementById('templatesBody');
     const alertBox = document.getElementById('templatesAlert');
@@ -523,12 +560,12 @@ async function fetchTemplates() {
         const res = await fetch(`${API_BASE_URL}/v1/templates`);
         const data = await res.json();
 
-        if(!res.ok) throw new Error(data.error || "Gagal mengambil daftar template.");
+        if (!res.ok) throw new Error(data.error || "Gagal mengambil daftar template.");
 
         fetchedTemplatesList = data || [];
         document.getElementById('statTotalTemplates').textContent = fetchedTemplatesList.length;
         renderTemplatesTable(fetchedTemplatesList);
-    } catch(e) {
+    } catch (e) {
         tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color:var(--danger);">Gagal memuat katalog template.</td></tr>';
         alertBox.className = 'alert error';
         alertBox.textContent = e.message;
@@ -539,26 +576,26 @@ function renderTemplatesTable(templates) {
     const tbody = document.getElementById('templatesBody');
     tbody.innerHTML = '';
 
-    if(!templates || templates.length === 0) {
+    if (!templates || templates.length === 0) {
         tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Belum ada template terdaftar.</td></tr>';
         return;
     }
 
     templates.forEach(tpl => {
-        const viewBtn = `<button class="btn btn-outline" style="padding:4px 8px; font-size:11.5px;" onclick="viewTemplateDetail('${tpl.id}')">🔍 View</button>`;
-        const editBtn = `<button class="btn btn-outline" style="padding:4px 8px; font-size:11.5px;" onclick="editTemplateFromStore('${tpl.id}')">✏️ Edit</button>`;
-        const delBtn = `<button class="btn btn-danger" style="padding:4px 8px; font-size:11.5px;" onclick="deleteTemplate('${tpl.id}')">🗑️</button>`;
+        const viewBtn = `<button class="btn btn-outline" style="padding:3px 6px; font-size:11px;" onclick="viewTemplateDetail('${tpl.id}')">🔍 View</button>`;
+        const editBtn = `<button class="btn btn-outline" style="padding:3px 6px; font-size:11px;" onclick="editTemplateFromStore('${tpl.id}')">✏️ Edit</button>`;
+        const delBtn = `<button class="btn btn-danger" style="padding:3px 6px; font-size:11px;" onclick="deleteTemplate('${tpl.id}')">🗑️</button>`;
 
         const row = document.createElement('tr');
         row.innerHTML = `
             <td><code>${escapeHtml(tpl.id)}</code></td>
             <td>
                 <strong>${escapeHtml(tpl.name)}</strong><br>
-                <small style="color:var(--text-muted);">${escapeHtml(tpl.description || '-')}</small>
+                <small style="color:var(--text-muted); font-size:11px;">${escapeHtml(tpl.description || '-')}</small>
             </td>
             <td><span class="badge" style="background:#f1f5f9; color:var(--text-main);">${escapeHtml(tpl.version)}</span></td>
             <td>${tpl.is_free ? '<span class="badge badge-active">Gratis</span>' : '<span class="badge badge-deploying">Premium</span>'}</td>
-            <td style="font-size:12px; color:var(--text-muted);">${escapeHtml(tpl.updated_at || '-')}</td>
+            <td style="font-size:11.5px; color:var(--text-muted);">${escapeHtml(tpl.updated_at || '-')}</td>
             <td style="text-align: center;">
                 <div style="display:flex; gap:4px; justify-content:center;">${viewBtn}${editBtn}${delBtn}</div>
             </td>
@@ -581,7 +618,7 @@ async function viewTemplateDetail(templateId) {
     try {
         const res = await fetch(`${API_BASE_URL}/v1/templates/detail/${templateId}`);
         const data = await res.json();
-        if(!res.ok) throw new Error(data.error || "Gagal mengambil detail.");
+        if (!res.ok) throw new Error(data.error || "Gagal mengambil detail.");
 
         document.getElementById('templateModalTitle').textContent = `Raw Layout Template: ${data.name} (${data.id})`;
         let layoutObj = data.layout_data;
@@ -589,7 +626,7 @@ async function viewTemplateDetail(templateId) {
         
         document.getElementById('templatePre').textContent = typeof layoutObj === 'object' ? JSON.stringify(layoutObj, null, 2) : layoutObj;
         document.getElementById('templateDetailModal').style.display = 'block';
-    } catch(e) {
+    } catch (e) {
         alert("Gagal memuat detail: " + e.message);
     }
 }
@@ -714,7 +751,7 @@ async function submitAddTemplate(e) {
     };
 
     btn.disabled = true;
-    btn.textContent = 'Menyimpan ke Dual Storage (GitHub + D1)...';
+    btn.textContent = 'Menyimpan ke Dual Storage...';
     alertBox.className = 'alert info';
     alertBox.textContent = 'Proses menyimpan file ke repositori GitHub & metadata ke D1...';
 
@@ -779,125 +816,91 @@ async function deleteTemplate(templateId) {
     }
 }
 
-async function submitEditCredentials(e) {
-    e.preventDefault();
-    const pwd = getPassword();
-    if(!pwd) return;
+// Asset Builder Helpers
+function handleAssetFileUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
 
-    const workerName = document.getElementById('editWorkerName').value;
-    const cfToken = document.getElementById('editCfToken').value;
-    const githubPat = document.getElementById('editGithubPat').value;
-    const alertBox = document.getElementById('editCredAlert');
-
-    alertBox.className = 'alert info';
-    alertBox.textContent = 'Menyimpan kredensial baru...';
-
-    try {
-        const res = await fetch(`${API_BASE_URL}/api/update-client-credentials`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                adminPassword: pwd,
-                worker_name: workerName,
-                cf_token: cfToken,
-                github_pat: githubPat
-            })
-        });
-        const data = await res.json();
-        if(!res.ok) throw new Error(data.error || "Gagal memperbarui.");
-
-        alertBox.className = 'alert success';
-        alertBox.textContent = data.message;
-        setTimeout(() => {
-            closeModal('editCredentialsModal');
-            fetchClients();
-        }, 1500);
-    } catch (err) {
-        alertBox.className = 'alert error';
-        alertBox.textContent = err.message;
-    }
+    document.getElementById('assetFileName').value = file.name;
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+        document.getElementById('assetFileContent').value = evt.target.result;
+    };
+    reader.readAsText(file);
 }
 
-async function syncIndividualClient(workerName) {
-    const pwd = getPassword();
-    if(!pwd) return;
+function addOrUpdateAsset() {
+    const fileName = document.getElementById('assetFileName').value.trim();
+    const content = document.getElementById('assetFileContent').value;
 
-    if(!confirm(`Jalankan full sinkronisasi ulang untuk '${workerName}'?`)) return;
-
-    const alertBox = document.getElementById('tableAlert');
-    alertBox.className = 'alert info';
-    alertBox.textContent = `Sedang menyinkronkan ${workerName}...`;
-
-    try {
-        const res = await fetch(`${API_BASE_URL}/api/sync-client`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ adminPassword: pwd, worker_name: workerName })
-        });
-        const data = await res.json();
-        if(!res.ok) throw new Error(data.error || "Gagal sinkronisasi");
-        
-        alertBox.className = 'alert success';
-        alertBox.textContent = data.message;
-    } catch (err) {
-        alertBox.className = 'alert error';
-        alertBox.textContent = `Gagal sync ${workerName}: ${err.message}`;
-    }
-}
-
-async function deleteClientCompletely(workerName) {
-    const pwd = getPassword();
-    if (!pwd) return;
-
-    const confirmMsg = `⚠️ PERINGATAN HAPUS TOTAL (NUKE)!\n\n` +
-        `Anda akan MENGHAPUS TOTAL Seluruh Infrastruktur untuk klien: '${workerName}'\n\n` +
-        `Ini akan MENGHAPUS PERMANEN:\n` +
-        `1. Worker & Custom Domain Routing Cloudflare\n` +
-        `2. Cloudflare Pages Project\n` +
-        `3. Cloudflare KV & D1 Database Klien\n` +
-        `4. Cloudflare Queue Klien\n` +
-        `5. Repositori GitHub Klien\n` +
-        `6. Record dari Database Pusat & licenses.json\n\n` +
-        `Ketikkan nama worker '${workerName}' untuk konfirmasi:`;
-
-    const userInput = prompt(confirmMsg);
-    if (userInput !== workerName) {
-        if (userInput !== null) alert("Konfirmasi batal: Nama worker tidak cocok.");
+    if (!fileName) {
+        alert("Nama file asset wajib diisi!");
         return;
     }
 
-    const alertBox = document.getElementById('tableAlert');
-    alertBox.className = 'alert info';
-    alertBox.textContent = `MENGHAPUS TOTAL seluruh infrastruktur ${workerName}... Mohon tunggu 10-20 detik.`;
+    if (editingAssetKey && editingAssetKey !== fileName) {
+        delete currentTemplateAssets[editingAssetKey];
+    }
 
-    try {
-        const res = await fetch(`${API_BASE_URL}/api/delete-client-completely`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ adminPassword: pwd, worker_name: workerName })
-        });
-        const data = await res.json();
+    currentTemplateAssets[fileName] = content;
+    resetAssetInputs();
+    renderAssetsTable();
+}
 
-        if (!res.ok) throw new Error(data.error || "Gagal hapus total.");
+function resetAssetInputs() {
+    document.getElementById('assetFileName').value = '';
+    document.getElementById('assetFileContent').value = '';
+    document.getElementById('assetFileUpload').value = '';
+    editingAssetKey = null;
+    document.getElementById('btnAddAsset').textContent = '➕ Add Asset';
+    document.getElementById('btnCancelAssetEdit').style.display = 'none';
+}
 
-        let msg = "✅ HASIL NUKE / HAPUS TOTAL:\n" + data.message;
-        if (data.details && data.details.length > 0) {
-            msg += "\n\nRincian Tindakan:\n- " + data.details.join("\n- ");
-        }
+function editAsset(fileName) {
+    editingAssetKey = fileName;
+    document.getElementById('assetFileName').value = fileName;
+    document.getElementById('assetFileContent').value = currentTemplateAssets[fileName] || '';
+    document.getElementById('btnAddAsset').textContent = '💾 Update File';
+    document.getElementById('btnCancelAssetEdit').style.display = 'inline-flex';
+}
 
-        alertBox.className = 'alert success';
-        alertBox.textContent = msg;
-        fetchClients();
-    } catch (err) {
-        alertBox.className = 'alert error';
-        alertBox.textContent = `GAGAL NUKE KLIEN:\n${err.message}`;
+function deleteAsset(fileName) {
+    if (confirm(`Hapus file asset '${fileName}'?`)) {
+        delete currentTemplateAssets[fileName];
+        if (editingAssetKey === fileName) resetAssetInputs();
+        renderAssetsTable();
     }
 }
 
-// --- FETCH AUDIT LOGS & TELEMETRY ---
+function renderAssetsTable() {
+    const tbody = document.getElementById('assetsTableBody');
+    tbody.innerHTML = '';
+
+    const keys = Object.keys(currentTemplateAssets);
+    if (keys.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--text-muted);">Belum ada file asset ditambahkan.</td></tr>';
+        return;
+    }
+
+    keys.forEach(fileName => {
+        const contentPreview = (currentTemplateAssets[fileName] || '').substring(0, 50).replace(/\n/g, ' ') + '...';
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td><code>${escapeHtml(fileName)}</code></td>
+            <td><small style="color:var(--text-muted); font-size:11px;">${escapeHtml(contentPreview)}</small></td>
+            <td style="text-align: center; white-space: nowrap;">
+                <button type="button" onclick="editAsset('${escapeHtml(fileName)}')" class="btn btn-outline" style="padding: 2px 6px; font-size: 10.5px;">✏️ Edit</button>
+                <button type="button" onclick="deleteAsset('${escapeHtml(fileName)}')" class="btn btn-danger" style="padding: 2px 6px; font-size: 10.5px;">🗑️</button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+// --- AUDIT LOGS & TELEMETRY ---
 async function fetchAuditLogs() {
     const pwd = getPassword();
-    if(!pwd) return;
+    if (!pwd) return;
 
     const tbody = document.getElementById('auditBody');
     const alertBox = document.getElementById('auditAlert');
@@ -913,11 +916,11 @@ async function fetchAuditLogs() {
         });
         const data = await res.json();
 
-        if(!res.ok) throw new Error(data.error || "Gagal mengambil log");
+        if (!res.ok) throw new Error(data.error || "Gagal mengambil log");
 
         fetchedAuditLogsList = data.data || [];
         renderAuditTable(fetchedAuditLogsList);
-    } catch(e) {
+    } catch (e) {
         tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color:var(--danger);">Gagal memuat log audit.</td></tr>';
         alertBox.className = 'alert error';
         alertBox.textContent = e.message;
@@ -928,7 +931,7 @@ function renderAuditTable(logs) {
     const tbody = document.getElementById('auditBody');
     tbody.innerHTML = '';
 
-    if(!logs || logs.length === 0) {
+    if (!logs || logs.length === 0) {
         tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Tidak ada log audit tercatat.</td></tr>';
         return;
     }
@@ -937,7 +940,7 @@ function renderAuditTable(logs) {
         window.auditDataStore[log.id] = log;
         const dateObj = new Date(log.created_at);
         const formattedDate = dateObj.toLocaleString('id-ID');
-        const detailBtn = `<button class="btn btn-outline" style="padding:4px 8px; font-size:11.5px;" onclick="showAuditModal('${log.id}')">🔍 Lihat Bukti</button>`;
+        const detailBtn = `<button class="btn btn-outline" style="padding:3px 6px; font-size:11px;" onclick="showAuditModal('${log.id}')">🔍 Lihat Bukti</button>`;
         
         const logStatus = (log.status || 'unread').toLowerCase();
         const keyType = (log.changed_keys || '').toUpperCase();
@@ -954,9 +957,9 @@ function renderAuditTable(logs) {
         if (rowBg) row.style = rowBg;
 
         row.innerHTML = `
-            <td style="font-size:12px;">${formattedDate}</td>
+            <td style="font-size:11.5px;">${formattedDate}</td>
             <td><strong>${escapeHtml(log.worker_name)}</strong></td>
-            <td><small style="color:${log.client_email === 'UNKNOWN_PIRATE' ? 'var(--danger)' : 'var(--text-muted)'}; font-weight:600;">${escapeHtml(log.client_email)}</small></td>
+            <td><small style="color:${log.client_email === 'UNKNOWN_PIRATE' ? 'var(--danger)' : 'var(--text-muted)'}; font-weight:600; font-size:11px;">${escapeHtml(log.client_email)}</small></td>
             <td>${typeBadge}</td>
             <td><span class="badge ${logStatus === 'unread' ? 'badge-unread' : 'badge-active'}">${logStatus}</span></td>
             <td style="text-align: center;">${detailBtn}</td>
@@ -977,11 +980,35 @@ function filterAuditTable() {
     renderAuditTable(filtered);
 }
 
-// --- RECREATE WORKER ---
+function showAuditModal(auditId) {
+    const log = window.auditDataStore[auditId];
+    if (!log) return;
+    
+    let oldParsed = log.old_data, newParsed = log.new_data;
+    try { oldParsed = JSON.parse(log.old_data); } catch(e){}
+    try { newParsed = JSON.parse(log.new_data); } catch(e){}
+
+    document.getElementById('diffOld').textContent = typeof oldParsed === 'object' ? JSON.stringify(oldParsed, null, 2) : oldParsed;
+    document.getElementById('diffNew').textContent = typeof newParsed === 'object' ? JSON.stringify(newParsed, null, 2) : newParsed;
+    document.getElementById('auditModal').style.display = 'block';
+}
+
+function inspectClientAudit(workerName) {
+    switchTab('audit');
+    setTimeout(() => {
+        const searchInput = document.getElementById('auditSearchInput');
+        if (searchInput) {
+            searchInput.value = workerName;
+            filterAuditTable();
+        }
+    }, 250);
+}
+
+// --- SYSTEM ACTIONS & RECREATE WORKER ---
 document.getElementById('redeployForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     const pwd = getPassword();
-    if(!pwd) return;
+    if (!pwd) return;
 
     const btn = document.getElementById('btnRecreate');
     const alertBox = document.getElementById('recreateAlert');
@@ -1015,7 +1042,6 @@ document.getElementById('redeployForm').addEventListener('submit', async functio
     }
 });
 
-// --- SYSTEM ACTIONS (MASS UPDATE & PURGE CACHE) ---
 async function triggerMassUpdate() {
     const pwd = getPassword();
     if (!pwd) return;
@@ -1093,7 +1119,7 @@ async function triggerMassUpdate() {
 
 async function executeSystemAction(endpoint, actionName, btnId) {
     const pwd = getPassword();
-    if(!pwd) return;
+    if (!pwd) return;
 
     const alertBox = document.getElementById('systemAlert');
     const btn = document.getElementById(btnId);
@@ -1133,26 +1159,3 @@ async function executeSystemAction(endpoint, actionName, btnId) {
         btn.textContent = originalText;
     }
 }
-
-function toggleSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebarOverlay');
-            if (window.innerWidth <= 992) {
-                sidebar.classList.toggle('mobile-open');
-                overlay.classList.toggle('active');
-            } else {
-                sidebar.classList.toggle('collapsed');
-            }
-        }
-
-        // Auto Close Sidebar di Mobile saat pilih tab
-        const originalSwitchTab = window.switchTab;
-        window.switchTab = function(tabId) {
-            if (typeof originalSwitchTab === 'function') {
-                originalSwitchTab(tabId);
-            }
-            if (window.innerWidth <= 992) {
-                document.getElementById('sidebar').classList.remove('mobile-open');
-                document.getElementById('sidebarOverlay').classList.remove('active');
-            }
-        };
