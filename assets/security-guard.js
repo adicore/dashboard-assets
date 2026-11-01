@@ -3,16 +3,27 @@
   const currentHost = window.location.hostname.toLowerCase();
   const lockedDomain = "__LOCKED_DOMAIN__"; // Placeholder untuk dynamic rewrite dari Worker Klien
 
-  // Bypass untuk lingkungan development lokal
+  // 0. Bypass untuk lingkungan development lokal
   if (currentHost === "localhost" || currentHost === "127.0.0.1") return;
 
-  // 1. VALIDASI DYNAMIC DOMAIN LOCK
+  // 1. BYPASS UTAMA: Cek apakah domain terdaftar di window.__EXEMPT_DOMAINS__ (di-injeksi dari wrangler.toml / Env Worker)
+  if (window.__EXEMPT_DOMAINS__) {
+    const envExempts = String(window.__EXEMPT_DOMAINS__)
+      .split(',')
+      .map(d => d.trim().toLowerCase())
+      .filter(Boolean);
+    
+    const isExempt = envExempts.some(ex => currentHost === ex || currentHost.endsWith("." + ex) || currentHost.includes(ex));
+    if (isExempt) return; // BEBAS LISENSI (Bypass seluruh pemeriksaan di bawah)
+  }
+
+  // 2. VALIDASI DYNAMIC DOMAIN LOCK (Hasil Rewrite Worker Klien)
   if (lockedDomain !== "__LOCKED_DOMAIN__" && !lockedDomain.includes(currentHost) && !currentHost.includes(lockedDomain)) {
     blockUI("🚨 403 DOMAIN LOCK VIOLATION: Skrip ini dikunci khusus untuk domain resmi.");
     throw new Error("Domain lock mismatch.");
   }
 
-  // 2. VALIDASI JWT LISENSI LENGKAP
+  // 3. VALIDASI JWT LISENSI LENGKAP
   const authToken = window.__CMS_AUTH__;
   if (!authToken) {
     blockUI("🚨 403 LICENSE ERROR: Token lisensi CMS tidak ditemukan.");
