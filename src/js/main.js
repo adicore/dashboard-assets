@@ -1,3 +1,5 @@
+// main.js - Travego SaaS Dashboard Admin Pusat Client-Side Logic
+
 // ======= KONFIGURASI API PUSAT =======
 const API_BASE_URL = window.location.origin;
 // =====================================
@@ -16,23 +18,37 @@ let currentSavedPermissionIds = [];
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
     const savedPwd = localStorage.getItem('pusat_api_password');
-    if (savedPwd) {
-        document.getElementById('globalPassword').value = savedPwd;
+    const pwdInput = document.getElementById('globalPassword');
+    
+    if (savedPwd && pwdInput) {
+        pwdInput.value = savedPwd;
     }
-    document.getElementById('globalPassword').addEventListener('input', (e) => {
-        localStorage.setItem('pusat_api_password', e.target.value);
-    });
+    
+    if (pwdInput) {
+        pwdInput.addEventListener('input', (e) => {
+            localStorage.setItem('pusat_api_password', e.target.value);
+        });
+    }
+
+    // Event Listener untuk Form Reset / Redeploy Worker
+    const redeployForm = document.getElementById('redeployForm');
+    if (redeployForm) {
+        redeployForm.addEventListener('submit', handleRedeploySubmit);
+    }
+
     fetchClients();
 });
 
+// Penutupan Modal via Tombol Escape
 window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
     }
 });
 
+// Penutupan Modal via Klik Outer Backdrop
 window.onclick = function(event) {
-    if (event.target && event.target.className === 'modal') {
+    if (event.target && event.target.classList && event.target.classList.contains('modal')) {
         event.target.style.display = "none";
     }
 };
@@ -60,7 +76,7 @@ function switchTab(tabId) {
     if (targetSection) targetSection.classList.add('active');
     if (targetTab) targetTab.classList.add('active');
 
-    // Auto-close drawer sidebar di layar ponsel
+    // Auto-close drawer sidebar jika dalam mode mobile
     if (window.innerWidth <= 992) {
         const sidebar = document.getElementById('sidebar');
         const overlay = document.getElementById('sidebarOverlay');
@@ -78,8 +94,10 @@ function switchModalTab(panelId) {
     document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
     
     if (window.event && window.event.target) {
-        window.event.target.classList.add('active');
+        const activeBtn = window.event.target.closest('.modal-tab-btn');
+        if (activeBtn) activeBtn.classList.add('active');
     }
+    
     const targetPanel = document.getElementById(panelId);
     if (targetPanel) targetPanel.classList.add('active');
 }
@@ -95,7 +113,8 @@ function togglePasswordVisibility(inputId) {
 }
 
 function getPassword() {
-    const pwd = document.getElementById('globalPassword').value;
+    const pwdInput = document.getElementById('globalPassword');
+    const pwd = pwdInput ? pwdInput.value : '';
     if (!pwd) alert("Silakan isi Sandi API Admin terlebih dahulu.");
     return pwd;
 }
@@ -1005,7 +1024,7 @@ function inspectClientAudit(workerName) {
 }
 
 // --- SYSTEM ACTIONS & RECREATE WORKER ---
-document.getElementById('redeployForm').addEventListener('submit', async function(e) {
+async function handleRedeploySubmit(e) {
     e.preventDefault();
     const pwd = getPassword();
     if (!pwd) return;
@@ -1040,7 +1059,7 @@ document.getElementById('redeployForm').addEventListener('submit', async functio
         btn.disabled = false;
         btn.textContent = '🚀 Eksekusi Recreate Worker';
     }
-});
+}
 
 async function triggerMassUpdate() {
     const pwd = getPassword();
