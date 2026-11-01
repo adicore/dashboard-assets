@@ -1,0 +1,5 @@
+/*
+  Access-Control-Allow-Origin: https://admin.voyage.web.id
+  Access-Control-Allow-Methods: GET, OPTIONS
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
