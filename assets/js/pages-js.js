@@ -1,3 +1,5 @@
+// pages-js.js - Zero KV Version (D1 Database & GitHub Direct Integration)
+
 // ==========================================
 // 1. GLOBAL UTILITIES & TRANSLATIONS
 // ==========================================
@@ -113,13 +115,10 @@ let currentPageStorageProvider = 'github';
 
 async function loadPageStoragePreference() {
     try {
-        const res = await fetch('/api/kv?key=global:settings');
+        const res = await fetch('/api/user/profile');
         if (res.ok) {
-            const txt = await res.text();
-            if (txt) {
-                const settings = JSON.parse(txt);
-                currentPageStorageProvider = settings.storage_provider_pages || settings.default_storage || 'github';
-            }
+            const data = await res.json();
+            currentPageStorageProvider = data.storage_provider || 'github';
         }
     } catch(e) {}
 }
@@ -329,19 +328,8 @@ window.mainDomain = window.location.origin;
 async function loadStaticPages() {
     const tbody = document.getElementById('staticPagesTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted fst-italic">Loading pages list...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted fst-italic">Loading pages list from D1...</td></tr>';
     
-    try {
-        const resSettings = await fetch('/api/kv?key=global:settings');
-        if (resSettings.ok) {
-            const txt = await resSettings.text();
-            if (txt) {
-                const settingsData = JSON.parse(txt);
-                if (settingsData.site_url) window.mainDomain = settingsData.site_url.trim().replace(/\/+$/, '');
-            }
-        }
-    } catch(e) {}
-
     try {
         const res = await fetch('/api/pages/list');
         if (res.ok) {
@@ -349,7 +337,7 @@ async function loadStaticPages() {
             applyPageFiltersAndRender();
         } else { throw new Error(); }
     } catch(e) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Failed to load pages.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Failed to load pages from D1 database.</td></tr>';
     }
 }
 
@@ -464,7 +452,7 @@ function renderPagesTableHtml(pages) {
     const userEmail = document.body.getAttribute('data-email') || '';
 
     tbody.innerHTML = '';
-    if (!pages.length) { tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No static pages found based on current filter.</td></tr>'; return; }
+    if (!pages.length) { tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No static pages found.</td></tr>'; return; }
 
     pages.forEach(p => {
         const isOwner = (p.author_email || '') === userEmail;
@@ -540,53 +528,7 @@ function renderPagesTableHtml(pages) {
 }
 
 // -------------------------------------------------------------
-// GITHUB DELETE PROMPT FUNCTION
-// -------------------------------------------------------------
-window.showGithubDeletePrompt = function(deletedFilesArray) {
-    if(!deletedFilesArray || deletedFilesArray.length === 0) return;
-    
-    const listContainer = document.getElementById('githubDeleteFilesList');
-    if(listContainer) {
-        listContainer.innerHTML = deletedFilesArray.join('<br>');
-    }
-    
-    const modalEl = document.getElementById('githubDeletePromptModal');
-    const bsModal = new bootstrap.Modal(modalEl);
-    const btnConfirm = document.getElementById('btnConfirmGithubDelete');
-    
-    const newBtn = btnConfirm.cloneNode(true);
-    btnConfirm.parentNode.replaceChild(newBtn, btnConfirm);
-    
-    newBtn.addEventListener('click', async () => {
-        setButtonLoading(newBtn, true, "Deleting...");
-        try {
-            for(let file of deletedFilesArray) {
-                await fetch('/api/github/delete', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path: file })
-                });
-            }
-            
-            showToast("Pages successfully deleted from GitHub!", "success");
-            bsModal.hide();
-            
-            document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.add('d-none'));
-            localStorage.removeItem('sync_pending');
-            
-            setTimeout(() => { window.location.reload(); }, 2000);
-        } catch(e) {
-            showToast("An error occurred while contacting GitHub.", "danger");
-        } finally {
-            setButtonLoading(newBtn, false);
-        }
-    });
-    
-    bsModal.show();
-};
-
-// -------------------------------------------------------------
-// BULK ACTION EXECUTION (ALL TAB)
+// BULK ACTION EXECUTION
 // -------------------------------------------------------------
 window.executePageBulkAction = async function() {
     const action = document.getElementById('bulkPageActionSelect').value;
@@ -608,14 +550,9 @@ window.executePageBulkAction = async function() {
         });
 
         if (res.ok) {
-            document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
-            localStorage.setItem('sync_pending', 'true');
-
-            showToast(`The '${action}' bulk action was successfully executed! Click Sync & Deploy in navbar to publish to GitHub.`);
+            showToast(`The '${action}' bulk action was successfully executed in D1!`);
             await loadStaticPages(); 
             updateBulkPageActionBar();
-
-            setTimeout(() => { window.location.reload(); }, 1500);
         } else {
             const errText = await res.text();
             showToast("Failed to execute bulk action: " + errText, "danger");
@@ -627,9 +564,6 @@ window.executePageBulkAction = async function() {
     }
 };
 
-// -------------------------------------------------------------
-// BULK ACTION EXECUTION (TRASH TAB)
-// -------------------------------------------------------------
 window.executeTrashBulkAction = async function() {
     const action = document.getElementById('bulkTrashActionSelect').value;
     const checkboxes = document.querySelectorAll('.page-checkbox:checked');
@@ -641,7 +575,6 @@ window.executeTrashBulkAction = async function() {
     setButtonLoading(btnExecute, true, "Processing...");
 
     const selectedIds = Array.from(checkboxes).map(cb => cb.value);
-    let deletedFilesToSync = [];
 
     try {
         const res = await fetch('/api/pages/action', {
@@ -651,28 +584,9 @@ window.executeTrashBulkAction = async function() {
         });
 
         if (res.ok) {
-            const data = await res.json().catch(() => ({}));
-            if (data.require_sync && data.deleted_files) {
-                deletedFilesToSync = data.deleted_files;
-            }
-
-            document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
-            localStorage.setItem('sync_pending', 'true');
-
-            if (action === 'publish') {
-                showToast("Page successfully restored to Published status! Click Sync & Deploy in navbar to publish to GitHub.");
-            } else {
-                showToast(`Trash bulk action '${action}' successfully executed!`);
-            }
-
+            showToast(`Trash bulk action '${action}' successfully executed!`);
             await loadStaticPages(); 
             updateBulkPageActionBar();
-
-            if (action === 'delete' && deletedFilesToSync.length > 0) {
-                showGithubDeletePrompt(deletedFilesToSync);
-            } else {
-                setTimeout(() => { window.location.reload(); }, 1500);
-            }
         } else {
             const errText = await res.text();
             showToast("Failed to execute trash bulk action: " + errText, "danger");
@@ -684,14 +598,9 @@ window.executeTrashBulkAction = async function() {
     }
 };
 
-// -------------------------------------------------------------
-// INDIVIDUAL PAGE ACTIONS FUNCTION (PUBLISH, DRAFT, TRASH, DELETE)
-// -------------------------------------------------------------
 window.performPageAction = async function(pageId, action) {
     if (action === 'delete' && !confirm("Permanently delete this page?")) return;
     if (action === 'trash' && !confirm("Move this page to trash?")) return;
-
-    let deletedFilesToSync = [];
 
     try {
         const res = await fetch('/api/pages/action', {
@@ -701,27 +610,8 @@ window.performPageAction = async function(pageId, action) {
         });
 
         if (res.ok) {
-            const data = await res.json().catch(() => ({}));
-            if (data.require_sync && data.deleted_files) {
-                deletedFilesToSync = data.deleted_files;
-            }
-
-            document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
-            localStorage.setItem('sync_pending', 'true');
-
-            if (action === 'publish') {
-                showToast("Page successfully restored to Published! Click Sync & Deploy in navbar to publish to GitHub.");
-            } else {
-                showToast(`Page action '${action}' successfully executed!`);
-            }
-
+            showToast(`Page action '${action}' successfully executed in D1!`);
             await loadStaticPages();
-
-            if (action === 'delete' && deletedFilesToSync.length > 0) {
-                showGithubDeletePrompt(deletedFilesToSync);
-            } else {
-                setTimeout(() => { window.location.reload(); }, 1500);
-            }
         } else {
             showToast("Failed to execute page action.", "danger");
         }
@@ -730,13 +620,10 @@ window.performPageAction = async function(pageId, action) {
     }
 };
 
-window.deleteStaticPage = async function(pageId, fileName) {
-    await performPageAction(pageId, 'trash');
-};
-
 window.currentPageId = '';
 window.currentFilename = '';
-window.availableBlocksList = []; 
+window._currentPageCss = '';
+window._currentPageJs = '';
 
 window.openNewStaticPageEditor = async function() {
     const timestamp = Date.now();
@@ -748,24 +635,20 @@ window.openNewStaticPageEditor = async function() {
         const res = await fetch('/api/pages/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: pageId, name: defaultName, filename: defaultFilename, status: 'draft' })
+            body: JSON.stringify({ id: pageId, name: defaultName, filename: defaultFilename, status: 'draft', mode: 'tinymce' })
         });
         
         if (!res.ok) throw new Error(await res.text());
 
         await loadStaticPages();
-        
-        document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
-        localStorage.setItem('sync_pending', 'true');
-
         openPageManager(pageId, defaultName, defaultFilename);
     } catch (e) {
-        showToast("Failed to create new page: " + e.message, "danger");
+        showToast("Failed to create new page in D1: " + e.message, "danger");
     }
 };
 
 // =============================================================
-// OPEN PAGE MANAGER (DENGAN SAFE CLEANUP & MODE RETRIEVAL)
+// 3. OPEN PAGE MANAGER (D1 SQL & GITHUB REPO DIRECT FETCH)
 // =============================================================
 window.openPageManager = async function(pageId, pageName, fileName, forcedMode = null) {
     if (window.tinymce && tinymce.get('pageTinyMceArea')) {
@@ -781,10 +664,8 @@ window.openPageManager = async function(pageId, pageName, fileName, forcedMode =
     document.getElementById('pageEditorModalTitle').innerHTML = `Manage Page: ${pageName}`;
     document.getElementById('pageModalFooterInfo').innerHTML = `File URL: <code class="text-primary font-monospace">${fileName}</code>`;
 
-    const userRole = (document.body.getAttribute('data-role') || 'administrator').toLowerCase();
-    
     const container = document.getElementById('pageEditorModalBodyContent');
-    container.innerHTML = '<div class="text-center py-5 text-muted fst-italic">Loading page data...</div>';
+    container.innerHTML = '<div class="text-center py-5 text-muted fst-italic">Loading page data from D1 database & GitHub repo...</div>';
     
     const modalEl = document.getElementById('pageEditorModal');
     const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
@@ -796,52 +677,28 @@ window.openPageManager = async function(pageId, pageName, fileName, forcedMode =
         }
     }, { once: true });
 
-    let seoData = {title: pageName, description: '', ogImage: '', noIndex: false, noFollow: false};
+    // AMBIL DATA HANYA DARI ENDPOINT D1 / GITHUB DETAIL (ZERO KV)
+    let pageDetail = { name: pageName, filename: fileName, mode: 'tinymce', content: '', seo: '{}', css: '', js: '' };
     try {
-        const resSeo = await fetch('/api/kv?key=page:'+pageId+':seo');
-        if(resSeo.ok) { const txt = await resSeo.text(); if(txt) seoData = JSON.parse(txt); }
+        const resDetail = await fetch('/api/pages/detail?id=' + encodeURIComponent(pageId));
+        if (resDetail.ok) {
+            pageDetail = await resDetail.json();
+        }
     } catch(e){}
 
-    let currentEditorMode = forcedMode || '';
-    if (!currentEditorMode) {
-        try {
-            const resMode = await fetch('/api/kv?key=page:'+pageId+':editor_mode');
-            if(resMode.ok) { 
-                const txt = await resMode.text(); 
-                if(txt && txt.trim() !== '' && txt !== 'Failed to load.') { 
-                    currentEditorMode = txt.trim().replace(/^"|"$/g, ''); 
-                } 
-            }
-            if (!currentEditorMode) {
-                const resMode2 = await fetch('/api/kv?key=page:'+pageId+':mode');
-                if(resMode2.ok) { 
-                    const txt2 = await resMode2.text(); 
-                    if(txt2 && txt2.trim() !== '' && txt2 !== 'Failed to load.') { 
-                        currentEditorMode = txt2.trim().replace(/^"|"$/g, ''); 
-                    } 
-                }
-            }
-        } catch(e){}
-    }
-    if (!currentEditorMode) currentEditorMode = 'block_library';
+    let currentEditorMode = forcedMode || pageDetail.mode || 'tinymce';
+    let pageContentForTinyMce = pageDetail.content || '';
 
-    let pageContentForTinyMce = '';
-    if (currentEditorMode === 'tinymce') {
-        try {
-            const resContent = await fetch('/api/kv?key=page:' + pageId + ':raw');
-            if (resContent.ok) {
-                const txt = await resContent.text();
-                if (txt && txt !== 'Failed to load.') pageContentForTinyMce = txt;
-            }
-            if (!pageContentForTinyMce) {
-                const resC2 = await fetch('/api/kv?key=page:' + pageId + ':content');
-                if (resC2.ok) {
-                    const txt2 = await resC2.text();
-                    if (txt2 && txt2 !== 'Failed to load.') pageContentForTinyMce = txt2;
-                }
-            }
-        } catch(e) {}
-    }
+    let seoData = { title: pageName, description: '', ogImage: '', noIndex: false, noFollow: false };
+    try {
+        if (pageDetail.seo) {
+            const parsed = typeof pageDetail.seo === 'string' ? JSON.parse(pageDetail.seo) : pageDetail.seo;
+            seoData = { ...seoData, ...parsed };
+        }
+    } catch(e){}
+
+    window._currentPageCss = pageDetail.css || '';
+    window._currentPageJs = pageDetail.js || '';
 
     container.innerHTML = `
     <div class="mb-3">
@@ -885,8 +742,8 @@ window.openPageManager = async function(pageId, pageName, fileName, forcedMode =
     <div class="row g-4">
         <div class="col-lg-9">
             <div class="row g-3 mb-3">
-                <div class="col-md-6"><div class="wp-card p-3 bg-white hover-bg border" onclick="openEditor('page:${pageId}:css', 'Page Custom CSS')" style="cursor:pointer"><h6 class="fw-bold mb-0 small text-primary"><i class="bi bi-filetype-css me-2"></i> Page Custom CSS</h6></div></div>
-                <div class="col-md-6"><div class="wp-card p-3 bg-white hover-bg border" onclick="openEditor('page:${pageId}:js', 'Page Custom JS')" style="cursor:pointer"><h6 class="fw-bold mb-0 small text-warning"><i class="bi bi-filetype-js me-2"></i> Page Custom JS</h6></div></div>
+                <div class="col-md-6"><div class="wp-card p-3 bg-white hover-bg border" onclick="openPageCssJsEditor('${pageId}', 'css')" style="cursor:pointer"><h6 class="fw-bold mb-0 small text-primary"><i class="bi bi-filetype-css me-2"></i> Page Custom CSS</h6></div></div>
+                <div class="col-md-6"><div class="wp-card p-3 bg-white hover-bg border" onclick="openPageCssJsEditor('${pageId}', 'js')" style="cursor:pointer"><h6 class="fw-bold mb-0 small text-warning"><i class="bi bi-filetype-js me-2"></i> Page Custom JS</h6></div></div>
             </div>
 
             ${currentEditorMode === 'tinymce' ? `
@@ -910,12 +767,8 @@ window.openPageManager = async function(pageId, pageName, fileName, forcedMode =
                         <h4 class="fw-bold text-dark mb-1"><i class="bi bi-layers text-success me-2"></i> Sections &amp; Blocks Layout</h4>
                         <p class="text-muted small mb-0">Manage your page section layout and blocks from the library.</p>
                     </div>
-                    <button class="btn btn-sm btn-primary px-3 py-2 shadow-sm" onclick="openAddSectionModal('${pageId}')"><i class="bi bi-plus-lg me-1"></i> Add Section</button>
                 </div>
-                <hr class="text-muted opacity-25 my-3">
-                <div id="sectionsListContainer-${pageId}" class="d-flex flex-column gap-3">
-                    <div class="text-center py-3 text-muted small fst-italic">Loading block layout...</div>
-                </div>
+                <textarea id="pageTinyMceArea" rows="15" class="form-control">${pageContentForTinyMce}</textarea>
             </div>`}
 
             <div class="wp-card p-4 bg-white">
@@ -933,14 +786,14 @@ window.openPageManager = async function(pageId, pageName, fileName, forcedMode =
             <div class="wp-card p-3 bg-white mb-3">
                 <h6 class="fw-bold text-dark mb-3 border-bottom pb-2">Save Page</h6>
                 <div class="d-grid gap-2 mb-2">
-                    <button type="button" class="btn btn-sm btn-outline-warning fw-semibold" onclick="savePageAsDraft()">
+                    <button type="button" class="btn btn-sm btn-outline-warning fw-semibold" id="btnSaveDraft" onclick="savePageAsDraft()">
                         <i class="bi bi-file-earmark-lock me-1"></i> Save Draft
                     </button>
-                    <button type="button" class="btn btn-sm wp-btn-primary fw-semibold" onclick="publishPageDirect()">
-                        <i class="bi bi-cloud-upload me-1"></i> Publish
+                    <button type="button" class="btn btn-sm wp-btn-primary fw-semibold" id="btnPublish" onclick="publishPageDirect()">
+                        <i class="bi bi-cloud-upload me-1"></i> Publish to GitHub
                     </button>
                 </div>
-                <p class="small text-muted mt-2 mb-0" style="font-size: 0.75rem;"><i class="bi bi-info-circle me-1"></i>Changes will be saved and ready to release via Sync & Deploy.</p>
+                <p class="small text-muted mt-2 mb-0" style="font-size: 0.75rem;"><i class="bi bi-info-circle me-1"></i>Directly committed to GitHub repo & D1 SQL database.</p>
             </div>
             <div class="wp-card p-3 bg-white mb-3">
                 <h6 class="fw-bold text-dark mb-3 border-bottom pb-2">File Info</h6>
@@ -951,9 +804,7 @@ window.openPageManager = async function(pageId, pageName, fileName, forcedMode =
     </div>`;
 
     setupOgImageUploads();
-    if (currentEditorMode === 'block_library') {
-        loadPageSectionsUI(pageId);
-    } else if (currentEditorMode === 'tinymce') {
+    if (currentEditorMode === 'tinymce' || currentEditorMode === 'block_library') {
         setTimeout(() => {
             if (window.tinymce) {
                 if (tinymce.get('pageTinyMceArea')) tinymce.get('pageTinyMceArea').remove();
@@ -1017,13 +868,13 @@ window.publishPageDirect = function() {
 };
 
 // =============================================================
-// UNIFIED SAVE PAGE (PERBAIKAN SINKRONISASI TINYMCE & KV MIGRATION)
+// 4. UNIFIED SAVE PAGE (LANGSUNG D1 DATABASE & GITHUB COMMIT)
 // =============================================================
 window.saveStaticPageUnified = async function(targetStatus = 'draft') {
     const oldPageId = window.currentPageId;
-    const titleInput = document.getElementById('modalPageTitleInput-' + oldPageId) || document.getElementById('inpStaticPageTitle');
-    const slugInput = document.getElementById('modalPageSlugInput-' + oldPageId) || document.getElementById('inpStaticPageSlug');
-    const btn = document.getElementById('btnSaveStaticPageUnified') || document.getElementById('btnSaveStaticPageFullscreen');
+    const titleInput = document.getElementById('modalPageTitleInput-' + oldPageId);
+    const slugInput = document.getElementById('modalPageSlugInput-' + oldPageId);
+    const btn = targetStatus === 'published' ? document.getElementById('btnPublish') : document.getElementById('btnSaveDraft');
 
     const title = titleInput ? titleInput.value.trim() : 'Untitled Page';
     const rawSlugInput = slugInput ? slugInput.value.trim() : '';
@@ -1041,92 +892,59 @@ window.saveStaticPageUnified = async function(targetStatus = 'draft') {
     if (!oldPageId) return showToast("No active page ID selected.", "danger");
     setButtonLoading(btn, true, targetStatus === 'published' ? "Publishing Page..." : "Saving Draft...");
 
-    const currentStatus = targetStatus;
-
     try {
         let rawContent = '';
         if (window.tinymce && tinymce.get('pageTinyMceArea')) {
             rawContent = tinymce.get('pageTinyMceArea').getContent();
         } else {
-            const el = document.getElementById('pageTinyMceArea') || document.getElementById('inpStaticPageContent');
+            const el = document.getElementById('pageTinyMceArea');
             if (el) rawContent = el.value;
         }
 
         const selectedRadio = document.querySelector(`input[name="editorMode-${oldPageId}"]:checked`);
-        const selectedMode = selectedRadio ? selectedRadio.value : 'block_library';
+        const selectedMode = selectedRadio ? selectedRadio.value : 'tinymce';
 
         const seoData = {
-            title: document.getElementById('modalPageTitleInput-' + oldPageId)?.value || title,
+            title: document.getElementById('modalSeoTitle-' + oldPageId)?.value || title,
             description: document.getElementById('modalSeoDesc-' + oldPageId)?.value || '',
             ogImage: document.getElementById('modalSeoImage-' + oldPageId)?.value || '',
             noIndex: document.getElementById('modalSeoNoIndex-' + oldPageId)?.checked || false,
             noFollow: document.getElementById('modalSeoNoFollow-' + oldPageId)?.checked || false
         };
 
-        // FIXED: Tambahkan prefix 'page:' saat membaca KV key lama untuk disalin ke ID baru
-        if (oldPageId !== newPageId) {
-            const suffixes = ['', ':raw', ':content', ':seo', ':sections', ':css', ':js', ':editor_mode', ':mode', ':builder_json', ':compiled'];
-            for (let sfx of suffixes) {
-                try {
-                    const resKv = await fetch('/api/kv?key=page:' + oldPageId + sfx);
-                    if (resKv.ok) {
-                        const txt = await resKv.text();
-                        if (txt && txt !== 'Failed to load.') {
-                            await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + newPageId + sfx, content: txt }) });
-                        }
-                    }
-                } catch(e) {}
-            }
-            try {
-                await fetch('/api/pages/delete', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ id: oldPageId, filename: '' }) });
-            } catch(e) {}
-        }
-
-        await fetch('/api/pages/create', {
+        // Kirim langsung ke Endpoint Backend /api/publish
+        const pubRes = await fetch('/api/publish', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ id: newPageId, name: title, filename: filename, status: currentStatus })
+            body: JSON.stringify({ 
+                filename: filename, 
+                pageId: newPageId, 
+                content: rawContent,
+                mode: selectedMode,
+                name: title,
+                seoData: seoData,
+                css: window._currentPageCss || '',
+                js: window._currentPageJs || ''
+            })
         });
 
-        const kvPromises = [];
-        if (rawContent !== undefined && rawContent !== '') {
-            kvPromises.push(
-                fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + newPageId + ':raw', content: rawContent }) }),
-                fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + newPageId + ':content', content: clientSideMinify(rawContent) }) })
-            );
-        }
-        
-        // Simpan mode editor secara eksplisit
-        kvPromises.push(
-            fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + newPageId + ':editor_mode', content: selectedMode }) }),
-            fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + newPageId + ':mode', content: selectedMode }) }),
-            fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + newPageId + ':seo', content: JSON.stringify(seoData) }) })
-        );
-        
-        await Promise.all(kvPromises);
-
-        await fetch('/api/publish', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ filename: filename, pageId: newPageId })
-        });
-
-        document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
-        localStorage.setItem('sync_pending', 'true');
+        const pubData = await pubRes.json().catch(() => ({}));
 
         setButtonLoading(btn, false);
         
-        if (currentStatus === 'published') {
-            showToast("Static page successfully marked as Published! Click Sync & Deploy in navbar to publish to GitHub.");
+        if (pubRes.ok && pubData.publishedToGithub) {
+            showToast("Halaman berhasil disimpan ke D1 & dikirim langsung ke Repo GitHub (docs/)!");
+        } else if (pubRes.ok) {
+            showToast("Tersimpan di Database D1, namun gagal commit ke GitHub.", "warning");
         } else {
-            showToast("Static page successfully saved as Draft! Click Sync & Deploy in navbar when you want to publish it.");
+            showToast(pubData.message || "Gagal mempublikasikan ke GitHub.", "danger");
         }
 
         setTimeout(() => {
-            const modalEl = document.getElementById('pageEditorModal') || document.getElementById('createStaticPageFullscreenModal');
+            const modalEl = document.getElementById('pageEditorModal');
             if(modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
             loadStaticPages();
-        }, 1000);
+        }, 1200);
     } catch(e) {
         setButtonLoading(btn, false);
         showToast("Error occurred: " + e.message, "danger");
@@ -1134,364 +952,94 @@ window.saveStaticPageUnified = async function(targetStatus = 'draft') {
 };
 
 // =============================================================
-// SAVE EDITOR MODE (PERBAIKAN PRESERVE TINYMCE CONTENT)
+// 5. SAVE EDITOR MODE (UPDATE LANGSUNG DI D1 DATABASE)
 // =============================================================
 window.saveEditorMode = async function(pageId, evt) {
     if (evt) evt.preventDefault();
-    const btn = evt ? evt.currentTarget : document.querySelector(`button[onclick*="saveEditorMode('${pageId}')"]`);
+    const btn = evt ? evt.currentTarget : null;
     if (btn) setButtonLoading(btn, true, "Saving Mode...");
 
     const selectedRadio = document.querySelector(`input[name="editorMode-${pageId}"]:checked`);
-    const selected = selectedRadio ? selectedRadio.value : 'block_library';
-
-    let rawContent = '';
-    if (window.tinymce && tinymce.get('pageTinyMceArea')) {
-        rawContent = tinymce.get('pageTinyMceArea').getContent();
-    } else {
-        const el = document.getElementById('pageTinyMceArea');
-        if (el) rawContent = el.value;
-    }
+    const selected = selectedRadio ? selectedRadio.value : 'tinymce';
 
     try {
-        const promises = [
-            fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':editor_mode', content: selected }) }),
-            fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':mode', content: selected }) })
-        ];
+        await fetch('/api/pages/create', { 
+            method: 'POST', 
+            headers: {'Content-Type': 'application/json'}, 
+            body: JSON.stringify({ 
+                id: pageId, 
+                name: document.getElementById('modalPageTitleInput-' + pageId)?.value || pageId,
+                filename: document.getElementById('modalPageSlugInput-' + pageId)?.value || `${pageId}.html`,
+                mode: selected 
+            }) 
+        });
 
-        if (rawContent) {
-            promises.push(
-                fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':raw', content: rawContent }) }),
-                fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':content', content: clientSideMinify(rawContent) }) })
-            );
-        }
-
-        await Promise.all(promises);
-
-        showToast("Editor mode successfully saved!");
+        showToast("Mode Editor berhasil diperbarui di D1 Database!");
 
         const pageTitle = document.getElementById('modalPageTitleInput-' + pageId)?.value || 'Page';
         const fileName = document.getElementById('modalPageSlugInput-' + pageId)?.value || 'page.html';
 
         if (btn) setButtonLoading(btn, false);
-
         openPageManager(pageId, pageTitle, fileName, selected);
     } catch(e) { 
         if (btn) setButtonLoading(btn, false);
-        showToast("Failed to save editor mode.", "danger"); 
+        showToast("Gagal memperbarui mode editor.", "danger"); 
     }
 };
 
-// --- SECTIONS & BLOCKS LOGIC ---
-async function loadPageSectionsUI(pageId) {
-    const container = document.getElementById(`sectionsListContainer-${pageId}`);
-    if (!container) return;
-
-    let sections = [];
-    try {
-        const res = await fetch('/api/kv?key=page:' + pageId + ':sections');
-        if (res.ok) {
-            const txt = await res.text();
-            if (txt) sections = JSON.parse(txt);
+// =============================================================
+// 6. CUSTOM CSS/JS EDITOR UNTUK PAGE
+// =============================================================
+window.openPageCssJsEditor = function(pageId, type) {
+    const title = type === 'css' ? 'Page Custom CSS' : 'Page Custom JS';
+    const initialValue = type === 'css' ? (window._currentPageCss || '') : (window._currentPageJs || '');
+    
+    document.getElementById('currentEditKey').value = `page_${type}_${pageId}`;
+    document.getElementById('currentIsGitHubFile').value = "false";
+    document.getElementById('editorOverlayTitle').innerHTML = `Edit: ${title}`;
+    
+    const overlay = document.getElementById('customEditorOverlay');
+    overlay.style.display = 'flex';
+    
+    const ed = document.getElementById('htmlEditor');
+    ed.value = initialValue;
+    
+    setTimeout(() => {
+        if (typeof window.initCodeMirrorEditor === 'function') {
+            window.initCodeMirrorEditor('#htmlEditor', type === 'css' ? 'css' : 'javascript');
+            if (window.currentCodeMirrorInstance) window.currentCodeMirrorInstance.refresh();
         }
-    } catch(e) {}
-
-    if (!sections.length) {
-        sections = []; 
-        await saveSectionsToKv(pageId, sections);
-    }
-    renderSectionsHtml(pageId, sections);
-}
-
-function renderSectionsHtml(pageId, sections) {
-    const container = document.getElementById(`sectionsListContainer-${pageId}`);
-    if (!container) return;
-    container.innerHTML = '';
-    
-    if (!sections.length) {
-        container.innerHTML = '<div class="text-center py-4 text-muted small fst-italic">No sections added yet. Click "+ Add Section" above to start building.</div>';
-        return;
-    }
-
-    sections.forEach((sec) => {
-        const isLibraryBlock = window.availableBlocksList && window.availableBlocksList.includes(sec.id);
-        const editKey = isLibraryBlock ? 'block:' + sec.id : 'page:' + pageId + ':section:' + sec.id;
-
-        container.innerHTML += `
-        <div class="border p-3 rounded-3 bg-white shadow-sm d-flex justify-content-between align-items-center">
-            <div><h6 class="fw-bold text-dark mb-1">${sec.name}</h6><code class="text-muted small font-monospace">ID: ${sec.id} ${isLibraryBlock ? '<span class="badge bg-success ms-1">Library Block</span>' : ''}</code></div>
-            <div class="d-flex gap-2">
-                <button class="btn btn-sm btn-outline-primary px-2 py-1" onclick="openSectionRepeaterModal('${pageId}', '${sec.id}', '${sec.name}')" title="Edit Data Repeater / Items"><i class="bi bi-list-nested me-1"></i> Data Repeater</button>
-                <button class="btn btn-sm btn-outline-secondary px-2 py-1" onclick="openEditor('${editKey}', '${sec.name}')" title="Edit HTML"><i class="bi bi-code-slash"></i> Edit HTML</button>
-                <button class="btn btn-sm btn-outline-danger px-2 py-1" onclick="deletePageSection('${pageId}', '${sec.id}')" title="Delete Section"><i class="bi bi-trash"></i></button>
-            </div>
-        </div>`;
-    });
-}
-
-window.openSectionRepeaterModal = async function(pageId, secId, secName) {
-    let modalEl = document.getElementById('sectionRepeaterModal');
-    if (modalEl) modalEl.remove();
-
-    let repeaterItems = [
-        { title: "Item 1", subtitle: "", url: "", color: "", image: "", description: "First item description..." },
-        { title: "Item 2", subtitle: "", url: "#", color: "#e6f4a3", image: "", description: "Second item description..." }
-    ];
-
-    try {
-        const res = await fetch('/api/kv?key=' + encodeURIComponent('page:' + pageId + ':section:' + secId + ':repeater'));
-        if (res.ok) {
-            const txt = await res.text();
-            if (txt) {
-                const parsed = JSON.parse(txt);
-                if (Array.isArray(parsed) && parsed.length > 0) repeaterItems = parsed;
-            }
-        }
-    } catch(e) {}
-
-    const div = document.createElement('div');
-    div.innerHTML = `
-    <div class="modal fade" id="sectionRepeaterModal" tabindex="-1">
-        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
-            <div class="modal-content border-0 shadow-lg rounded-3">
-                <div class="modal-header bg-dark text-white px-4 py-3">
-                    <h5 class="modal-title fw-bold fs-5">Edit Repeater Data: ${secName}</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body p-4 bg-light">
-                    <div id="sectionRepeaterRowsContainer" class="d-flex flex-column gap-3 mb-3"></div>
-                    <button type="button" id="btnAddRepeaterRow" class="btn btn-sm btn-outline-primary px-3 fw-semibold"><i class="bi bi-plus-circle me-1"></i> Add New Item Row</button>
-                </div>
-                <div class="modal-footer bg-white px-4 py-3 border-top d-flex justify-content-between">
-                    <button type="button" class="btn wp-btn-secondary px-4" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" id="btnSaveRepeater" class="btn wp-btn-primary px-5">Save Data</button>
-                </div>
-            </div>
-        </div>
-    </div>`;
-    document.body.appendChild(div);
-
-    window._currentRepeaterItems = repeaterItems;
-    const container = document.getElementById('sectionRepeaterRowsContainer');
-
-    function renderRows() {
-        container.innerHTML = '';
-        if (!Array.isArray(window._currentRepeaterItems) || window._currentRepeaterItems.length === 0) {
-            container.innerHTML = '<div class="text-center text-muted small py-3">No repeater items yet. Click Add New Item Row below.</div>'; return;
-        }
-
-        window._currentRepeaterItems.forEach((item, index) => {
-            const rowDiv = document.createElement('div');
-            rowDiv.className = 'border p-3 rounded-3 bg-white shadow-sm position-relative';
-            rowDiv.innerHTML = `
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span class="fw-bold small text-dark">Item #${index + 1}</span>
-                    <button type="button" class="btn-close btn-remove-row" style="font-size: 0.75rem;" data-index="${index}"></button>
-                </div>
-                <div class="row g-2 mb-2">
-                    <div class="col-md-3"><label class="form-label small text-secondary mb-1">Title</label><input type="text" class="form-control form-control-sm repeater-title" value="${item.title || ''}"></div>
-                    <div class="col-md-3"><label class="form-label small text-secondary mb-1">Subtitle</label><input type="text" class="form-control form-control-sm repeater-subtitle" value="${item.subtitle || ''}"></div>
-                    <div class="col-md-3"><label class="form-label small text-secondary mb-1">Link URL</label><input type="text" class="form-control form-control-sm repeater-url" value="${item.url || ''}"></div>
-                    <div class="col-md-3"><label class="form-label small text-secondary mb-1">Background Color</label><input type="text" class="form-control form-control-sm repeater-color" value="${item.color || ''}"></div>
-                </div>
-                <div class="mb-2"><label class="form-label small text-secondary mb-1">Image URL / HTML Icon / SVG Code</label><input type="text" class="form-control form-control-sm repeater-image" value="${item.image || ''}"></div>
-                <div><label class="form-label small text-secondary mb-1">Description</label><textarea class="form-control form-control-sm repeater-desc" rows="2">${item.description || ''}</textarea></div>
-            `;
-            container.appendChild(rowDiv);
-        });
-    }
-
-    function collectInputs() {
-        const rows = container.querySelectorAll('.border');
-        rows.forEach((row, index) => {
-            if (window._currentRepeaterItems && window._currentRepeaterItems[index]) {
-                window._currentRepeaterItems[index].title = row.querySelector('.repeater-title')?.value || '';
-                window._currentRepeaterItems[index].subtitle = row.querySelector('.repeater-subtitle')?.value || '';
-                window._currentRepeaterItems[index].url = row.querySelector('.repeater-url')?.value || '';
-                window._currentRepeaterItems[index].color = row.querySelector('.repeater-color')?.value || '';
-                window._currentRepeaterItems[index].image = row.querySelector('.repeater-image')?.value || '';
-                window._currentRepeaterItems[index].description = row.querySelector('.repeater-desc')?.value || '';
-            }
-        });
-    }
-
-    document.getElementById('btnAddRepeaterRow').addEventListener('click', () => {
-        collectInputs();
-        if (!Array.isArray(window._currentRepeaterItems)) window._currentRepeaterItems = [];
-        window._currentRepeaterItems.push({ title: "New Item", subtitle: "", url: "", color: "", image: "", description: "" });
-        renderRows();
-    });
-
-    container.addEventListener('click', (e) => {
-        const btnRemove = e.target.closest('.btn-remove-row');
-        if (btnRemove) {
-            const index = parseInt(btnRemove.getAttribute('data-index'));
-            collectInputs();
-            window._currentRepeaterItems.splice(index, 1);
-            renderRows();
-        }
-    });
-
-    document.getElementById('btnSaveRepeater').addEventListener('click', async () => {
-        collectInputs();
-        let generatedHtml = '<div class="repeater-container py-3">';
-        window._currentRepeaterItems.forEach((item) => {
-            let bgStyle = item.color ? `background-color: ${item.color};` : '';
-            let imgTag = item.image ? (item.image.trim().startsWith('<svg') || item.image.trim().startsWith('<img') ? item.image : `<img src="${item.image}" alt="" style="max-width:100%; height:auto;" />`) : '';
-            let linkOpen = item.url ? `<a href="${item.url}" class="text-decoration-none">` : '';
-            let linkClose = item.url ? `</a>` : '';
-            generatedHtml += `
-            <div class="card mb-3 border shadow-sm p-3" style="${bgStyle}">
-                ${imgTag ? `<div class="mb-2">${imgTag}</div>` : ''}
-                ${linkOpen}<h5 class="fw-bold mb-1">${item.title || ''}</h5>${linkClose}
-                ${item.subtitle ? `<h6 class="text-muted small mb-2">${item.subtitle}</h6>` : ''}
-                ${item.description ? `<div class="text-secondary small">${item.description}</div>` : ''}
-            </div>`;
-        });
-        generatedHtml += '</div>';
-
-        try {
-            await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':section:' + secId + ':repeater', content: JSON.stringify(window._currentRepeaterItems) }) });
-            await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':section:' + secId + ':raw', content: generatedHtml }) });
-            await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':section:' + secId, content: clientSideMinify(generatedHtml) }) });
-
-            let sections = [];
-            const resSec = await fetch('/api/kv?key=page:' + pageId + ':sections');
-            if (resSec.ok) sections = JSON.parse(await resSec.text());
-            
-            sections = sections.map(s => s.id === secId ? { ...s, content: generatedHtml } : s);
-            await saveSectionsToKv(pageId, sections);
-
-            bootstrap.Modal.getInstance(document.getElementById('sectionRepeaterModal')).hide();
-            showToast("Repeater data successfully saved locally!");
-            
-            document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
-            localStorage.setItem('sync_pending', 'true');
-            
-            loadPageSectionsUI(pageId);
-        } catch(e) { showToast("Failed to save repeater data.", "danger"); }
-    });
-
-    renderRows();
-    new bootstrap.Modal(document.getElementById('sectionRepeaterModal')).show();
+    }, 100);
 };
 
-async function saveSectionsToKv(pageId, sections) {
-    await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':sections', content: JSON.stringify(sections) }) });
-    const combinedHtml = sections.map(s => s.content).join('\n');
-    await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':content', content: clientSideMinify(combinedHtml) }) });
-}
-
-window.openAddSectionModal = async function(pageId) {
-    const existingModal = document.getElementById('addSectionModal');
-    if (existingModal) existingModal.remove();
-
-    const div = document.createElement('div');
-    div.innerHTML = `
-    <div class="modal fade" id="addSectionModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header"><h5 class="modal-title fw-bold">Add Section</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-                <div class="modal-body">
-                    <div class="list-group mb-3" id="addSectionBlankContainer"><button type="button" class="list-group-item list-group-item-action fw-bold text-primary" onclick="createBlankSectionItem('${pageId}')"><i class="bi bi-plus-circle me-2"></i> + Create Blank Section</button></div>
-                    <h6 class="fw-bold small text-muted mb-2">Select from Block Library:</h6>
-                    <div class="list-group" id="libraryBlocksSelectList" style="max-height: 250px; overflow-y: auto;">
-                        <div class="text-center py-2 text-muted small">Loading block list...</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>`;
-    document.body.appendChild(div);
-    
-    const listContainer = document.getElementById('libraryBlocksSelectList');
-    if (listContainer) {
-        listContainer.innerHTML = '';
-        if (window.availableBlocksList && window.availableBlocksList.length > 0) {
-            window.availableBlocksList.forEach(bId => {
-                listContainer.innerHTML += `<div class="list-group-item d-flex justify-content-between align-items-center"><span class="font-monospace small">${bId}</span><button class="btn btn-sm btn-primary px-3" onclick="addSectionFromLibrary('${pageId}', '${bId}')">Select</button></div>`;
-            });
-        } else listContainer.innerHTML = '<div class="text-center py-2 text-muted small fst-italic">No blocks found in library.</div>';
+window.closeCustomEditor = function() {
+    document.getElementById('customEditorOverlay').style.display = 'none';
+    if (window.currentCodeMirrorInstance) {
+        try { window.currentCodeMirrorInstance.toTextArea(); } catch(e) {}
+        window.currentCodeMirrorInstance = null;
     }
-    new bootstrap.Modal(document.getElementById('addSectionModal')).show();
 };
 
-window.createBlankSectionItem = async function(pageId) {
-    const name = prompt("Enter new section name:", "Custom Section");
-    if (!name) return;
-    const secId = 'sec_' + Date.now();
-    let sections = [];
-    try { const res = await fetch('/api/kv?key=page:' + pageId + ':sections'); if (res.ok) sections = JSON.parse(await res.text()); } catch(e) {}
-    sections.push({ id: secId, name: name, content: `<div><h3>${name}</h3><p>Section content...</p></div>` });
-    await saveSectionsToKv(pageId, sections);
-    bootstrap.Modal.getInstance(document.getElementById('addSectionModal')).hide();
-    loadPageSectionsUI(pageId);
+window.saveEditorDataDualStorage = async function() {
+    const btn = document.getElementById('btnSaveEditor');
+    setButtonLoading(btn, true, "Saving...");
+    const key = document.getElementById('currentEditKey').value;
+    const rawContent = window.currentCodeMirrorInstance ? window.currentCodeMirrorInstance.getValue() : document.getElementById('htmlEditor').value;
     
-    document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
-    localStorage.setItem('sync_pending', 'true');
-    
-    showToast("New section successfully added!");
-};
-
-window.addSectionFromLibrary = async function(pageId, blockId) {
-    let blockContent = '';
-    const keysToTry = [
-        'block:' + blockId + ':raw',
-        'block:' + blockId,
-        'block:' + blockId + ':content'
-    ];
-    
-    for (let k of keysToTry) {
-        try {
-            const res = await fetch('/api/kv?key=' + encodeURIComponent(k));
-            if (res.ok) {
-                const txt = await res.text();
-                if (txt && txt.trim() !== '' && txt !== 'Failed to load.') {
-                    blockContent = txt;
-                    break;
-                }
-            }
-        } catch(e) {}
+    if (key.startsWith('page_css_')) {
+        window._currentPageCss = rawContent;
+    } else if (key.startsWith('page_js_')) {
+        window._currentPageJs = rawContent;
     }
 
-    const secId = blockId; 
-    try {
-        await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':section:' + secId + ':raw', content: blockContent }) });
-        await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':section:' + secId, content: clientSideMinify(blockContent) }) });
-    } catch(e) {}
-
-    let sections = [];
-    try { const res = await fetch('/api/kv?key=page:' + pageId + ':sections'); if (res.ok) { const txt = await res.text(); if (txt) sections = JSON.parse(txt); } } catch(e) {}
-
-    const existingIndex = sections.findIndex(s => s.id === secId);
-    if (existingIndex >= 0) sections[existingIndex].content = blockContent || '';
-    else sections.push({ id: secId, name: blockId, content: blockContent || '' });
-
-    await saveSectionsToKv(pageId, sections);
-    const modalEl = document.getElementById('addSectionModal');
-    if (modalEl) { const bsModal = bootstrap.Modal.getInstance(modalEl); if (bsModal) bsModal.hide(); }
-    loadPageSectionsUI(pageId);
-    
-    document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
-    localStorage.setItem('sync_pending', 'true');
-    
-    showToast(`Block ${blockId} successfully loaded into section!`);
+    setButtonLoading(btn, false);
+    showToast("CSS/JS berhasil disimpan dalam memory halaman!");
+    setTimeout(() => { closeCustomEditor(); }, 800);
 };
 
-window.deletePageSection = async function(pageId, secId) {
-    if (!confirm("Delete this section from the page?")) return;
-    let sections = [];
-    try { const res = await fetch('/api/kv?key=page:' + pageId + ':sections'); if (res.ok) sections = JSON.parse(await res.text()); } catch(e) {}
-    sections = sections.filter(s => s.id !== secId);
-    await saveSectionsToKv(pageId, sections);
-    loadPageSectionsUI(pageId);
-    
-    document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
-    localStorage.setItem('sync_pending', 'true');
-    
-    showToast("Section successfully deleted.");
-};
-
-// --- GRAPESJS BUILDER ---
+// =============================================================
+// 7. GRAPESJS BUILDER INTEGRATION
+// =============================================================
 window.openGrapesJSBuilder = async function(pageId) {
     const btn = document.getElementById('btnOpenBuilder');
     if (btn) setButtonLoading(btn, true, "Loading Builder...");
@@ -1513,98 +1061,73 @@ window.openGrapesJSBuilder = async function(pageId) {
     const iframe = document.getElementById('gjs-iframe');
 
     let initialProjectData = {};
-    try {
-        const res = await fetch('/api/kv?key=page:' + pageId + ':builder_json');
-        if (res.ok) {
-            const text = await res.text();
-            const trimmed = text ? text.trim() : "";
-            if (trimmed && (trimmed.startsWith('{') || trimmed.startsWith('['))) initialProjectData = JSON.parse(trimmed);
-        }
-    } catch(e) {}
-
     const currentLang = localStorage.getItem('dashboard_lang') || 'en';
 
     iframe.srcdoc = `<!DOCTYPE html>
     <html lang="${currentLang}">
     <head>
         <meta charset="UTF-8">
-        <title>GrapesJS Full Professional Builder</title>
+        <title>GrapesJS Visual Builder</title>
         <link rel="stylesheet" href="https://unpkg.com/grapesjs@0.20.4/dist/css/grapes.min.css">
         <link rel="stylesheet" href="https://unpkg.com/grapesjs-preset-webpage@1.0.2/dist/grapesjs-preset-webpage.min.css">
-        <link rel="stylesheet" href="https://unpkg.com/grapesjs-tooltip@0.1.5/dist/grapesjs-tooltip.min.css">
-        <link rel="stylesheet" href="https://uicdn.toast.com/tui-image-editor/latest/tui-image-editor.css">
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
         <script src="https://unpkg.com/grapesjs"></script>
         <script src="https://unpkg.com/grapesjs-preset-webpage"></script>
         <script src="https://unpkg.com/grapesjs-blocks-basic"></script>
-        <script src="https://unpkg.com/grapesjs-plugin-forms"></script>
-        <script src="https://unpkg.com/grapesjs-component-countdown"></script>
-        <script src="https://unpkg.com/grapesjs-plugin-export"></script>
-        <script src="https://unpkg.com/grapesjs-tabs"></script>
-        <script src="https://unpkg.com/grapesjs-custom-code"></script>
-        <script src="https://unpkg.com/grapesjs-touch"></script>
-        <script src="https://unpkg.com/grapesjs-parser-postcss"></script>
-        <script src="https://unpkg.com/grapesjs-tooltip"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
-        <script src="https://uicdn.toast.com/tui.code-snippet/v1.5.2/tui-code-snippet.min.js"></script>
-        <script src="https://uicdn.toast.com/tui-color-picker/v2.2.7/tui-color-picker.min.js"></script>
-        <script src="https://uicdn.toast.com/tui-image-editor/v3.15.2/tui-image-editor.js"></script>
-        <script src="https://unpkg.com/grapesjs-tui-image-editor"></script>
-        <script src="https://unpkg.com/grapesjs-typed"></script>
-        <script src="https://unpkg.com/grapesjs-style-bg"></script>
         <style>
-            body, html { margin: 0; height: 100%; overflow: hidden; background: #1e1e1e; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+            body, html { margin: 0; height: 100%; overflow: hidden; background: #1e1e1e; font-family: sans-serif; }
             #gjs-header { height: 50px; background: #212529; color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 1px solid #333; }
             #gjs { height: calc(100vh - 50px); }
             .gjs-btn { padding: 6px 16px; border-radius: 4px; border: none; cursor: pointer; font-weight: bold; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
             .btn-success { background: #198754; color: #fff; }
-            .btn-success:hover { background: #157347; }
             .btn-outline-light { background: transparent; color: #fff; border: 1px solid #6c757d; }
-            .btn-outline-light:hover { background: #343a40; }
         </style>
     </head>
     <body>
         <div id="gjs-header">
-            <div style="font-weight: bold; display: flex; align-items: center; gap: 8px;"><i class="bi bi-brush text-primary"></i> <span>Layout Editor: ${pageId}</span></div>
+            <div style="font-weight: bold; display: flex; align-items: center; gap: 8px;"><i class="bi bi-brush text-primary"></i> <span>Builder: ${pageId}</span></div>
             <div>
-                <button class="gjs-btn btn-success" id="btnSaveGjs" style="margin-right: 10px;"><i class="bi bi-floppy"></i> Save Design</button>
-                <button class="gjs-btn btn-outline-light" id="btnExitGjs"><i class="bi bi-x-lg"></i> Close Editor</button>
+                <button class="gjs-btn btn-success" id="btnSaveGjs" style="margin-right: 10px;"><i class="bi bi-floppy"></i> Save to GitHub</button>
+                <button class="gjs-btn btn-outline-light" id="btnExitGjs"><i class="bi bi-x-lg"></i> Close</button>
             </div>
         </div>
         <div id="gjs"></div>
         <script>
-            const initialData = ${JSON.stringify(initialProjectData)};
             window.editor = grapesjs.init({
                 container: '#gjs',
                 height: '100%', width: '100%',
-                parser: { parserCss: typeof grapesjsParserPostcss !== 'undefined' ? grapesjsParserPostcss : null },
-                plugins: ['gjs-preset-webpage', 'gjs-blocks-basic', 'gjs-plugin-forms', 'grapesjs-component-countdown', 'gjs-plugin-export', 'grapesjs-tabs', 'grapesjs-custom-code', 'grapesjs-touch', 'grapesjs-tooltip', 'grapesjs-tui-image-editor', 'grapesjs-typed', 'grapesjs-style-bg'],
-                pluginsOpts: {
-                    'gjs-preset-webpage': { blocksBasicOpts: { flexGrid: true } },
-                    'gjs-blocks-basic': { flexGrid: true },
-                    'grapesjs-tui-image-editor': { config: { includeUI: { theme: { 'common.bi.image': '', 'common.bisize.width': '0px', 'common.bisize.height': '0px' } } } }
-                }
+                plugins: ['gjs-preset-webpage', 'gjs-blocks-basic']
             });
-            if (initialData && Object.keys(initialData).length > 0) window.editor.loadProjectData(initialData);
 
             document.getElementById('btnSaveGjs').addEventListener('click', async () => {
                 const btnSave = document.getElementById('btnSaveGjs');
                 btnSave.innerText = 'Saving...'; btnSave.disabled = true;
                 try {
-                    const projectData = window.editor.getProjectData();
                     const rawHtml = window.editor.getHtml();
                     const cssData = window.editor.getCss();
-                    const minifiedHtml = rawHtml.replace(/<!--[\s\S]*?-->/gis, (m) => (m.includes('LOOP') || m.includes('IF_HAS_CHILDREN')) ? m : '').replace(/[\r\n]+/g, '').replace(/\s+/g, ' ').trim();
 
-                    await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:${pageId}:builder_json', content: JSON.stringify(projectData) }) });
-                    await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:${pageId}:content', content: minifiedHtml }) });
-                    await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:${pageId}:css', content: cssData }) });
-                    await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:${pageId}:editor_mode', content: 'grapesjs' }) });
-                    await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:${pageId}:mode', content: 'grapesjs' }) });
+                    const res = await fetch('/api/publish', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            pageId: '${pageId}',
+                            filename: '${pageId}.html',
+                            content: rawHtml,
+                            mode: 'grapesjs',
+                            css: cssData
+                        })
+                    });
 
-                    window.parent.postMessage({ type: 'SHOW_TOAST', message: 'GrapesJS design successfully saved locally!' }, '*');
-                } catch(e) { window.parent.postMessage({ type: 'SHOW_TOAST', message: 'Failed to save GrapesJS design.', typeToast: 'danger' }, '*'); } 
-                finally { btnSave.innerHTML = '<i class="bi bi-floppy"></i> Save Design'; btnSave.disabled = false; }
+                    if (res.ok) {
+                        window.parent.postMessage({ type: 'SHOW_TOAST', message: 'Desain GrapesJS berhasil dipublish ke GitHub & D1!' }, '*');
+                    } else {
+                        window.parent.postMessage({ type: 'SHOW_TOAST', message: 'Gagal push ke GitHub.', typeToast: 'danger' }, '*');
+                    }
+                } catch(e) { 
+                    window.parent.postMessage({ type: 'SHOW_TOAST', message: 'Error: ' + e.message, typeToast: 'danger' }, '*'); 
+                } finally { 
+                    btnSave.innerHTML = '<i class="bi bi-floppy"></i> Save to GitHub'; btnSave.disabled = false; 
+                }
             });
             document.getElementById('btnExitGjs').addEventListener('click', () => { window.parent.postMessage({ type: 'CLOSE_GJS' }, '*'); });
         </script>
@@ -1618,11 +1141,6 @@ window.addEventListener('message', function(event) {
     if (!event.data) return;
     if (event.data.type === 'SHOW_TOAST') {
         showToast(event.data.message, event.data.typeToast || 'success');
-        
-        if(event.data.message.toLowerCase().includes('saved locally')) {
-            document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
-            localStorage.setItem('sync_pending', 'true');
-        }
     }
     if (event.data.type === 'CLOSE_GJS') closeGrapesJS();
 });
@@ -1632,138 +1150,15 @@ window.closeGrapesJS = function() {
     if (wrapper) wrapper.style.display = 'none';
 };
 
-window.openEditor = async function(key, title) {
-    if (window.currentCodeMirrorInstance) {
-        try { window.currentCodeMirrorInstance.toTextArea(); } catch(e) {}
-        window.currentCodeMirrorInstance = null;
-    }
-
-    document.getElementById('currentEditKey').value = key;
-    document.getElementById('currentIsGitHubFile').value = "false";
-    document.getElementById('editorOverlayTitle').innerHTML = `Edit: ${title}`;
-    
-    let mode = 'htmlmixed';
-    if (key.includes(':css')) mode = 'css';
-    if (key.includes(':js')) mode = 'javascript';
-    
-    const overlay = document.getElementById('customEditorOverlay');
-    overlay.style.display = 'flex';
-    
-    const ed = document.getElementById('htmlEditor');
-    ed.value = "Loading data...";
-    
-    let content = "Failed to load.";
-    try {
-        const resRaw = await fetch('/api/kv?key=' + encodeURIComponent(key + ':raw'));
-        if (resRaw.ok) {
-            const rawTxt = await resRaw.text();
-            if (rawTxt) content = rawTxt;
-        }
-        if (content === "Failed to load.") {
-            const res = await fetch('/api/kv?key=' + encodeURIComponent(key));
-            if (res.ok) content = await res.text();
-        }
-    } catch(e) {}
-    
-    ed.value = content;
-    
-    setTimeout(() => {
-        if (typeof window.initCodeMirrorEditor === 'function') {
-            window.initCodeMirrorEditor('#htmlEditor', mode);
-            setTimeout(() => {
-                if (window.currentCodeMirrorInstance) window.currentCodeMirrorInstance.refresh();
-            }, 50);
-        }
-    }, 100);
-};
-
-window.closeCustomEditor = function() {
-    document.getElementById('customEditorOverlay').style.display = 'none';
-    if (window.currentCodeMirrorInstance) {
-        try { window.currentCodeMirrorInstance.toTextArea(); } catch(e) {}
-        window.currentCodeMirrorInstance = null;
-    }
-};
-
-window.saveEditorDataDualStorage = async function() {
-    const btn = document.getElementById('btnSaveEditor');
-    setButtonLoading(btn, true, "Saving...");
-    const key = document.getElementById('currentEditKey').value;
-    const rawContent = window.currentCodeMirrorInstance ? window.currentCodeMirrorInstance.getValue() : document.getElementById('htmlEditor').value;
-    
-    try {
-        await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: key + ':raw', content: rawContent }) });
-        const res = await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key, content: clientSideMinify(rawContent) }) });
-        
-        if (key.includes(':section:')) {
-            const parts = key.split(':');
-            const pageId = parts[1];
-            const secId = parts[3];
-            try {
-                const resSec = await fetch('/api/kv?key=page:' + pageId + ':sections');
-                if (resSec.ok) {
-                    let sections = JSON.parse(await resSec.text());
-                    sections = sections.map(s => s.id === secId ? { ...s, content: rawContent } : s);
-                    await saveSectionsToKv(pageId, sections);
-                }
-            } catch(e) {}
-        }
-
-        if (key.startsWith('block:') && window.currentPageId) {
-            const blockId = key.split(':')[1];
-            try {
-                const resSec = await fetch('/api/kv?key=page:' + window.currentPageId + ':sections');
-                if (resSec.ok) {
-                    let sections = JSON.parse(await resSec.text());
-                    let updated = false;
-                    sections = sections.map(s => {
-                        if (s.id === blockId) {
-                            updated = true;
-                            return { ...s, content: rawContent };
-                        }
-                        return s;
-                    });
-                    if (updated) {
-                        await saveSectionsToKv(window.currentPageId, sections);
-                    }
-                }
-            } catch(e) {}
-        }
-
-        setButtonLoading(btn, false);
-        if(res.ok){
-            document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
-            localStorage.setItem('sync_pending', 'true');
-
-            showToast("Changes successfully saved!");
-            setTimeout(() => { 
-                closeCustomEditor(); 
-                loadStaticPages(); 
-                if (window.currentPageId) loadPageSectionsUI(window.currentPageId); 
-            }, 1000);
-        } else throw new Error();
-    } catch(e) {
-        setButtonLoading(btn, false);
-        showToast("Failed to save changes.", "danger");
-    }
-};
-
+// =============================================================
+// DOM INITIALIZER
+// =============================================================
 document.addEventListener("DOMContentLoaded", async function() {
-    if (localStorage.getItem('sync_pending') === 'true') {
-        document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
-    }
-
     const defaultLang = localStorage.getItem('dashboard_lang') || 'en';
     changeLanguage(defaultLang);
     
     await initUserProfileTopbar();
     await loadPageStoragePreference();
-    
-    try {
-        const blockRes = await fetch('/api/blocks/list');
-        window.availableBlocksList = await blockRes.json();
-    } catch (e) { window.availableBlocksList = []; }
-
     await loadStaticPages();
 
     const urlParams = new URLSearchParams(window.location.search);
