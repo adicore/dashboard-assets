@@ -551,8 +551,10 @@ window.showGithubDeletePrompt = function(deletedFilesArray) {
     }
     
     const modalEl = document.getElementById('githubDeletePromptModal');
+    if (!modalEl) return;
     const bsModal = new bootstrap.Modal(modalEl);
     const btnConfirm = document.getElementById('btnConfirmGithubDelete');
+    if (!btnConfirm) return;
     
     const newBtn = btnConfirm.cloneNode(true);
     btnConfirm.parentNode.replaceChild(newBtn, btnConfirm);
@@ -574,7 +576,7 @@ window.showGithubDeletePrompt = function(deletedFilesArray) {
             document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.add('d-none'));
             localStorage.removeItem('sync_pending');
             
-            setTimeout(() => { window.location.reload(); }, 2000);
+            setTimeout(() => { window.location.reload(); }, 1200);
         } catch(e) {
             showToast("An error occurred while contacting GitHub.", "danger");
         } finally {
@@ -737,6 +739,8 @@ window.deleteStaticPage = async function(pageId, fileName) {
 window.currentPageId = '';
 window.currentFilename = '';
 window.availableBlocksList = []; 
+window._currentPageCss = '';
+window._currentPageJs = '';
 
 window.openNewStaticPageEditor = async function() {
     const timestamp = Date.now();
@@ -748,7 +752,7 @@ window.openNewStaticPageEditor = async function() {
         const res = await fetch('/api/pages/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: pageId, name: defaultName, filename: defaultFilename, status: 'draft' })
+            body: JSON.stringify({ id: pageId, name: defaultName, filename: defaultFilename, status: 'draft', mode: 'tinymce' })
         });
         
         if (!res.ok) throw new Error(await res.text());
@@ -765,7 +769,7 @@ window.openNewStaticPageEditor = async function() {
 };
 
 // =============================================================
-// OPEN PAGE MANAGER (DENGAN SAFE CLEANUP & MODE RETRIEVAL)
+// OPEN PAGE MANAGER (RETRIEVAL METADATA & KONTEN LANGSUNG DARI D1/GITHUB)
 // =============================================================
 window.openPageManager = async function(pageId, pageName, fileName, forcedMode = null) {
     if (window.tinymce && tinymce.get('pageTinyMceArea')) {
@@ -781,10 +785,8 @@ window.openPageManager = async function(pageId, pageName, fileName, forcedMode =
     document.getElementById('pageEditorModalTitle').innerHTML = `Manage Page: ${pageName}`;
     document.getElementById('pageModalFooterInfo').innerHTML = `File URL: <code class="text-primary font-monospace">${fileName}</code>`;
 
-    const userRole = (document.body.getAttribute('data-role') || 'administrator').toLowerCase();
-    
     const container = document.getElementById('pageEditorModalBodyContent');
-    container.innerHTML = '<div class="text-center py-5 text-muted fst-italic">Loading page data...</div>';
+    container.innerHTML = '<div class="text-center py-5 text-muted fst-italic">Loading page data from D1 Database...</div>';
     
     const modalEl = document.getElementById('pageEditorModal');
     const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
@@ -796,52 +798,37 @@ window.openPageManager = async function(pageId, pageName, fileName, forcedMode =
         }
     }, { once: true });
 
-    let seoData = {title: pageName, description: '', ogImage: '', noIndex: false, noFollow: false};
+    let pageDetail = { name: pageName, filename: fileName, mode: 'tinymce', content: '', seo: '{}', css: '', js: '' };
     try {
-        const resSeo = await fetch('/api/kv?key=page:'+pageId+':seo');
-        if(resSeo.ok) { const txt = await resSeo.text(); if(txt) seoData = JSON.parse(txt); }
+        const resDetail = await fetch('/api/pages/detail?id=' + encodeURIComponent(pageId));
+        if (resDetail.ok) {
+            pageDetail = await resDetail.json();
+        }
     } catch(e){}
 
-    let currentEditorMode = forcedMode || '';
-    if (!currentEditorMode) {
-        try {
-            const resMode = await fetch('/api/kv?key=page:'+pageId+':editor_mode');
-            if(resMode.ok) { 
-                const txt = await resMode.text(); 
-                if(txt && txt.trim() !== '' && txt !== 'Failed to load.') { 
-                    currentEditorMode = txt.trim().replace(/^"|"$/g, ''); 
-                } 
-            }
-            if (!currentEditorMode) {
-                const resMode2 = await fetch('/api/kv?key=page:'+pageId+':mode');
-                if(resMode2.ok) { 
-                    const txt2 = await resMode2.text(); 
-                    if(txt2 && txt2.trim() !== '' && txt2 !== 'Failed to load.') { 
-                        currentEditorMode = txt2.trim().replace(/^"|"$/g, ''); 
-                    } 
-                }
-            }
-        } catch(e){}
-    }
-    if (!currentEditorMode) currentEditorMode = 'block_library';
+    let currentEditorMode = forcedMode || pageDetail.mode || 'tinymce';
+    let pageContentForTinyMce = pageDetail.content || '';
 
-    let pageContentForTinyMce = '';
-    if (currentEditorMode === 'tinymce') {
+    if (!pageContentForTinyMce && currentEditorMode === 'tinymce') {
         try {
             const resContent = await fetch('/api/kv?key=page:' + pageId + ':raw');
             if (resContent.ok) {
                 const txt = await resContent.text();
                 if (txt && txt !== 'Failed to load.') pageContentForTinyMce = txt;
             }
-            if (!pageContentForTinyMce) {
-                const resC2 = await fetch('/api/kv?key=page:' + pageId + ':content');
-                if (resC2.ok) {
-                    const txt2 = await resC2.text();
-                    if (txt2 && txt2 !== 'Failed to load.') pageContentForTinyMce = txt2;
-                }
-            }
-        } catch(e) {}
+        } catch(e){}
     }
+
+    let seoData = { title: pageName, description: '', ogImage: '', noIndex: false, noFollow: false };
+    try {
+        if (pageDetail.seo) {
+            const parsed = typeof pageDetail.seo === 'string' ? JSON.parse(pageDetail.seo) : pageDetail.seo;
+            seoData = { ...seoData, ...parsed };
+        }
+    } catch(e){}
+
+    window._currentPageCss = pageDetail.css || '';
+    window._currentPageJs = pageDetail.js || '';
 
     container.innerHTML = `
     <div class="mb-3">
@@ -933,10 +920,10 @@ window.openPageManager = async function(pageId, pageName, fileName, forcedMode =
             <div class="wp-card p-3 bg-white mb-3">
                 <h6 class="fw-bold text-dark mb-3 border-bottom pb-2">Save Page</h6>
                 <div class="d-grid gap-2 mb-2">
-                    <button type="button" class="btn btn-sm btn-outline-warning fw-semibold" onclick="savePageAsDraft()">
+                    <button type="button" class="btn btn-sm btn-outline-warning fw-semibold" id="btnSaveDraft" onclick="savePageAsDraft()">
                         <i class="bi bi-file-earmark-lock me-1"></i> Save Draft
                     </button>
-                    <button type="button" class="btn btn-sm wp-btn-primary fw-semibold" onclick="publishPageDirect()">
+                    <button type="button" class="btn btn-sm wp-btn-primary fw-semibold" id="btnPublish" onclick="publishPageDirect()">
                         <i class="bi bi-cloud-upload me-1"></i> Publish
                     </button>
                 </div>
@@ -1017,13 +1004,13 @@ window.publishPageDirect = function() {
 };
 
 // =============================================================
-// UNIFIED SAVE PAGE (PERBAIKAN SINKRONISASI TINYMCE & KV MIGRATION)
+// UNIFIED SAVE PAGE (METADATA D1 & PUSH DISPATCH SINKRONISASI)
 // =============================================================
 window.saveStaticPageUnified = async function(targetStatus = 'draft') {
     const oldPageId = window.currentPageId;
     const titleInput = document.getElementById('modalPageTitleInput-' + oldPageId) || document.getElementById('inpStaticPageTitle');
     const slugInput = document.getElementById('modalPageSlugInput-' + oldPageId) || document.getElementById('inpStaticPageSlug');
-    const btn = document.getElementById('btnSaveStaticPageUnified') || document.getElementById('btnSaveStaticPageFullscreen');
+    const btn = targetStatus === 'published' ? (document.getElementById('btnPublish') || document.getElementById('btnSaveStaticPageUnified')) : (document.getElementById('btnSaveDraft') || document.getElementById('btnSaveStaticPageUnified'));
 
     const title = titleInput ? titleInput.value.trim() : 'Untitled Page';
     const rawSlugInput = slugInput ? slugInput.value.trim() : '';
@@ -1053,7 +1040,7 @@ window.saveStaticPageUnified = async function(targetStatus = 'draft') {
         }
 
         const selectedRadio = document.querySelector(`input[name="editorMode-${oldPageId}"]:checked`);
-        const selectedMode = selectedRadio ? selectedRadio.value : 'block_library';
+        const selectedMode = selectedRadio ? selectedRadio.value : 'tinymce';
 
         const seoData = {
             title: document.getElementById('modalPageTitleInput-' + oldPageId)?.value || title,
@@ -1063,54 +1050,40 @@ window.saveStaticPageUnified = async function(targetStatus = 'draft') {
             noFollow: document.getElementById('modalSeoNoFollow-' + oldPageId)?.checked || false
         };
 
-        // FIXED: Tambahkan prefix 'page:' saat membaca KV key lama untuk disalin ke ID baru
-        if (oldPageId !== newPageId) {
-            const suffixes = ['', ':raw', ':content', ':seo', ':sections', ':css', ':js', ':editor_mode', ':mode', ':builder_json', ':compiled'];
-            for (let sfx of suffixes) {
-                try {
-                    const resKv = await fetch('/api/kv?key=page:' + oldPageId + sfx);
-                    if (resKv.ok) {
-                        const txt = await resKv.text();
-                        if (txt && txt !== 'Failed to load.') {
-                            await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + newPageId + sfx, content: txt }) });
-                        }
-                    }
-                } catch(e) {}
-            }
-            try {
-                await fetch('/api/pages/delete', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ id: oldPageId, filename: '' }) });
-            } catch(e) {}
-        }
+        // Kirim payload lengkap ke backend D1 & GitHub
+        const pubRes = await fetch('/api/publish', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ 
+                filename: filename, 
+                pageId: newPageId, 
+                content: rawContent,
+                mode: selectedMode,
+                name: title,
+                seoData: seoData,
+                css: window._currentPageCss || '',
+                js: window._currentPageJs || ''
+            })
+        });
 
+        // Simpan status & metadata ke D1 Database
         await fetch('/api/pages/create', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ id: newPageId, name: title, filename: filename, status: currentStatus })
+            body: JSON.stringify({ 
+                id: newPageId, 
+                name: title, 
+                filename: filename, 
+                status: currentStatus,
+                mode: selectedMode,
+                content: rawContent,
+                seo: seoData,
+                css: window._currentPageCss || '',
+                js: window._currentPageJs || ''
+            })
         });
 
-        const kvPromises = [];
-        if (rawContent !== undefined && rawContent !== '') {
-            kvPromises.push(
-                fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + newPageId + ':raw', content: rawContent }) }),
-                fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + newPageId + ':content', content: clientSideMinify(rawContent) }) })
-            );
-        }
-        
-        // Simpan mode editor secara eksplisit
-        kvPromises.push(
-            fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + newPageId + ':editor_mode', content: selectedMode }) }),
-            fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + newPageId + ':mode', content: selectedMode }) }),
-            fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + newPageId + ':seo', content: JSON.stringify(seoData) }) })
-        );
-        
-        await Promise.all(kvPromises);
-
-        await fetch('/api/publish', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ filename: filename, pageId: newPageId })
-        });
-
+        // AKTIFKAN INDIKATOR SYNC PENDING DI TOOLBAR/NAVBAR
         document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
         localStorage.setItem('sync_pending', 'true');
 
@@ -1134,7 +1107,7 @@ window.saveStaticPageUnified = async function(targetStatus = 'draft') {
 };
 
 // =============================================================
-// SAVE EDITOR MODE (PERBAIKAN PRESERVE TINYMCE CONTENT)
+// SAVE EDITOR MODE (METADATA D1 + SYNC PENDING TRIGGER)
 // =============================================================
 window.saveEditorMode = async function(pageId, evt) {
     if (evt) evt.preventDefault();
@@ -1142,7 +1115,7 @@ window.saveEditorMode = async function(pageId, evt) {
     if (btn) setButtonLoading(btn, true, "Saving Mode...");
 
     const selectedRadio = document.querySelector(`input[name="editorMode-${pageId}"]:checked`);
-    const selected = selectedRadio ? selectedRadio.value : 'block_library';
+    const selected = selectedRadio ? selectedRadio.value : 'tinymce';
 
     let rawContent = '';
     if (window.tinymce && tinymce.get('pageTinyMceArea')) {
@@ -1153,19 +1126,17 @@ window.saveEditorMode = async function(pageId, evt) {
     }
 
     try {
-        const promises = [
-            fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':editor_mode', content: selected }) }),
-            fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':mode', content: selected }) })
-        ];
-
-        if (rawContent) {
-            promises.push(
-                fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':raw', content: rawContent }) }),
-                fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':content', content: clientSideMinify(rawContent) }) })
-            );
-        }
-
-        await Promise.all(promises);
+        await fetch('/api/pages/create', { 
+            method: 'POST', 
+            headers: {'Content-Type': 'application/json'}, 
+            body: JSON.stringify({ 
+                id: pageId, 
+                name: document.getElementById('modalPageTitleInput-' + pageId)?.value || pageId,
+                filename: document.getElementById('modalPageSlugInput-' + pageId)?.value || `${pageId}.html`,
+                mode: selected,
+                content: rawContent
+            }) 
+        });
 
         showToast("Editor mode successfully saved!");
 
@@ -1379,6 +1350,13 @@ async function saveSectionsToKv(pageId, sections) {
     await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':sections', content: JSON.stringify(sections) }) });
     const combinedHtml = sections.map(s => s.content).join('\n');
     await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':content', content: clientSideMinify(combinedHtml) }) });
+    
+    // Simpan sec_list ke D1 Database
+    await fetch('/api/pages/create', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ id: pageId, name: window.currentPageId || pageId, filename: window.currentFilename || `${pageId}.html`, sec_list: sections })
+    });
 }
 
 window.openAddSectionModal = async function(pageId) {
@@ -1596,11 +1574,19 @@ window.openGrapesJSBuilder = async function(pageId) {
                     const cssData = window.editor.getCss();
                     const minifiedHtml = rawHtml.replace(/<!--[\s\S]*?-->/gis, (m) => (m.includes('LOOP') || m.includes('IF_HAS_CHILDREN')) ? m : '').replace(/[\r\n]+/g, '').replace(/\s+/g, ' ').trim();
 
+                    await fetch('/api/publish', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            pageId: '${pageId}',
+                            filename: '${pageId}.html',
+                            content: minifiedHtml,
+                            mode: 'grapesjs',
+                            css: cssData
+                        })
+                    });
+
                     await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:${pageId}:builder_json', content: JSON.stringify(projectData) }) });
-                    await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:${pageId}:content', content: minifiedHtml }) });
-                    await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:${pageId}:css', content: cssData }) });
-                    await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:${pageId}:editor_mode', content: 'grapesjs' }) });
-                    await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:${pageId}:mode', content: 'grapesjs' }) });
 
                     window.parent.postMessage({ type: 'SHOW_TOAST', message: 'GrapesJS design successfully saved locally!' }, '*');
                 } catch(e) { window.parent.postMessage({ type: 'SHOW_TOAST', message: 'Failed to save GrapesJS design.', typeToast: 'danger' }, '*'); } 
@@ -1619,7 +1605,7 @@ window.addEventListener('message', function(event) {
     if (event.data.type === 'SHOW_TOAST') {
         showToast(event.data.message, event.data.typeToast || 'success');
         
-        if(event.data.message.toLowerCase().includes('saved locally')) {
+        if(event.data.message.toLowerCase().includes('saved locally') || event.data.message.toLowerCase().includes('saved')) {
             document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
             localStorage.setItem('sync_pending', 'true');
         }
@@ -1653,17 +1639,23 @@ window.openEditor = async function(key, title) {
     ed.value = "Loading data...";
     
     let content = "Failed to load.";
-    try {
-        const resRaw = await fetch('/api/kv?key=' + encodeURIComponent(key + ':raw'));
-        if (resRaw.ok) {
-            const rawTxt = await resRaw.text();
-            if (rawTxt) content = rawTxt;
-        }
-        if (content === "Failed to load.") {
-            const res = await fetch('/api/kv?key=' + encodeURIComponent(key));
-            if (res.ok) content = await res.text();
-        }
-    } catch(e) {}
+    if (key.includes(':css') && window._currentPageCss) {
+        content = window._currentPageCss;
+    } else if (key.includes(':js') && window._currentPageJs) {
+        content = window._currentPageJs;
+    } else {
+        try {
+            const resRaw = await fetch('/api/kv?key=' + encodeURIComponent(key + ':raw'));
+            if (resRaw.ok) {
+                const rawTxt = await resRaw.text();
+                if (rawTxt) content = rawTxt;
+            }
+            if (content === "Failed to load.") {
+                const res = await fetch('/api/kv?key=' + encodeURIComponent(key));
+                if (res.ok) content = await res.text();
+            }
+        } catch(e) {}
+    }
     
     ed.value = content;
     
@@ -1691,6 +1683,12 @@ window.saveEditorDataDualStorage = async function() {
     const key = document.getElementById('currentEditKey').value;
     const rawContent = window.currentCodeMirrorInstance ? window.currentCodeMirrorInstance.getValue() : document.getElementById('htmlEditor').value;
     
+    if (key.includes(':css')) {
+        window._currentPageCss = rawContent;
+    } else if (key.includes(':js')) {
+        window._currentPageJs = rawContent;
+    }
+
     try {
         await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: key + ':raw', content: rawContent }) });
         const res = await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key, content: clientSideMinify(rawContent) }) });
@@ -1731,7 +1729,7 @@ window.saveEditorDataDualStorage = async function() {
         }
 
         setButtonLoading(btn, false);
-        if(res.ok){
+        if(res.ok || window.currentPageId){
             document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
             localStorage.setItem('sync_pending', 'true');
 
