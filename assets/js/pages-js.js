@@ -765,9 +765,13 @@ window.openNewStaticPageEditor = async function() {
 };
 
 // =============================================================
-// OPEN PAGE MANAGER (DENGAN PENANGANAN FORCED MODE & SANITIZING)
+// OPEN PAGE MANAGER (DENGAN SAFE CLEANUP & MODE RETRIEVAL)
 // =============================================================
 window.openPageManager = async function(pageId, pageName, fileName, forcedMode = null) {
+    if (window.tinymce && tinymce.get('pageTinyMceArea')) {
+        tinymce.get('pageTinyMceArea').remove();
+    }
+
     window.currentPageId = pageId;
     window.currentFilename = fileName;
 
@@ -798,8 +802,8 @@ window.openPageManager = async function(pageId, pageName, fileName, forcedMode =
         if(resSeo.ok) { const txt = await resSeo.text(); if(txt) seoData = JSON.parse(txt); }
     } catch(e){}
 
-    let currentEditorMode = forcedMode || 'block_library';
-    if (!forcedMode) {
+    let currentEditorMode = forcedMode || '';
+    if (!currentEditorMode) {
         try {
             const resMode = await fetch('/api/kv?key=page:'+pageId+':editor_mode');
             if(resMode.ok) { 
@@ -808,20 +812,35 @@ window.openPageManager = async function(pageId, pageName, fileName, forcedMode =
                     currentEditorMode = txt.trim().replace(/^"|"$/g, ''); 
                 } 
             }
+            if (!currentEditorMode) {
+                const resMode2 = await fetch('/api/kv?key=page:'+pageId+':mode');
+                if(resMode2.ok) { 
+                    const txt2 = await resMode2.text(); 
+                    if(txt2 && txt2.trim() !== '' && txt2 !== 'Failed to load.') { 
+                        currentEditorMode = txt2.trim().replace(/^"|"$/g, ''); 
+                    } 
+                }
+            }
         } catch(e){}
     }
+    if (!currentEditorMode) currentEditorMode = 'block_library';
 
     let pageContentForTinyMce = '';
     if (currentEditorMode === 'tinymce') {
         try {
             const resContent = await fetch('/api/kv?key=page:' + pageId + ':raw');
-            if (resContent.ok) pageContentForTinyMce = await resContent.text();
-            else {
+            if (resContent.ok) {
+                const txt = await resContent.text();
+                if (txt && txt !== 'Failed to load.') pageContentForTinyMce = txt;
+            }
+            if (!pageContentForTinyMce) {
                 const resC2 = await fetch('/api/kv?key=page:' + pageId + ':content');
-                if (resC2.ok) pageContentForTinyMce = await resC2.text();
+                if (resC2.ok) {
+                    const txt2 = await resC2.text();
+                    if (txt2 && txt2 !== 'Failed to load.') pageContentForTinyMce = txt2;
+                }
             }
         } catch(e) {}
-        if (pageContentForTinyMce === 'Failed to load.') pageContentForTinyMce = '';
     }
 
     container.innerHTML = `
@@ -997,6 +1016,9 @@ window.publishPageDirect = function() {
     saveStaticPageUnified('published');
 };
 
+// =============================================================
+// UNIFIED SAVE PAGE (PERBAIKAN SINKRONISASI TINYMCE & KV MIGRATION)
+// =============================================================
 window.saveStaticPageUnified = async function(targetStatus = 'draft') {
     const oldPageId = window.currentPageId;
     const titleInput = document.getElementById('modalPageTitleInput-' + oldPageId) || document.getElementById('inpStaticPageTitle');
@@ -1030,6 +1052,9 @@ window.saveStaticPageUnified = async function(targetStatus = 'draft') {
             if (el) rawContent = el.value;
         }
 
+        const selectedRadio = document.querySelector(`input[name="editorMode-${oldPageId}"]:checked`);
+        const selectedMode = selectedRadio ? selectedRadio.value : 'block_library';
+
         const seoData = {
             title: document.getElementById('modalPageTitleInput-' + oldPageId)?.value || title,
             description: document.getElementById('modalSeoDesc-' + oldPageId)?.value || '',
@@ -1038,14 +1063,15 @@ window.saveStaticPageUnified = async function(targetStatus = 'draft') {
             noFollow: document.getElementById('modalSeoNoFollow-' + oldPageId)?.checked || false
         };
 
+        // FIXED: Tambahkan prefix 'page:' saat membaca KV key lama untuk disalin ke ID baru
         if (oldPageId !== newPageId) {
             const suffixes = ['', ':raw', ':content', ':seo', ':sections', ':css', ':js', ':editor_mode', ':mode', ':builder_json', ':compiled'];
             for (let sfx of suffixes) {
                 try {
-                    const resKv = await fetch('/api/kv?key=' + oldPageId + sfx);
+                    const resKv = await fetch('/api/kv?key=page:' + oldPageId + sfx);
                     if (resKv.ok) {
                         const txt = await resKv.text();
-                        if (txt) {
+                        if (txt && txt !== 'Failed to load.') {
                             await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + newPageId + sfx, content: txt }) });
                         }
                     }
@@ -1069,7 +1095,13 @@ window.saveStaticPageUnified = async function(targetStatus = 'draft') {
                 fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + newPageId + ':content', content: clientSideMinify(rawContent) }) })
             );
         }
-        kvPromises.push(fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + newPageId + ':seo', content: JSON.stringify(seoData) }) }));
+        
+        // Simpan mode editor secara eksplisit
+        kvPromises.push(
+            fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + newPageId + ':editor_mode', content: selectedMode }) }),
+            fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + newPageId + ':mode', content: selectedMode }) }),
+            fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + newPageId + ':seo', content: JSON.stringify(seoData) }) })
+        );
         
         await Promise.all(kvPromises);
 
@@ -1102,7 +1134,7 @@ window.saveStaticPageUnified = async function(targetStatus = 'draft') {
 };
 
 // =============================================================
-// SAVE EDITOR MODE (FUNGSI PERBAIKAN DENGAN INSTANT SWITCHING)
+// SAVE EDITOR MODE (PERBAIKAN PRESERVE TINYMCE CONTENT)
 // =============================================================
 window.saveEditorMode = async function(pageId, evt) {
     if (evt) evt.preventDefault();
@@ -1112,17 +1144,28 @@ window.saveEditorMode = async function(pageId, evt) {
     const selectedRadio = document.querySelector(`input[name="editorMode-${pageId}"]:checked`);
     const selected = selectedRadio ? selectedRadio.value : 'block_library';
 
+    let rawContent = '';
+    if (window.tinymce && tinymce.get('pageTinyMceArea')) {
+        rawContent = tinymce.get('pageTinyMceArea').getContent();
+    } else {
+        const el = document.getElementById('pageTinyMceArea');
+        if (el) rawContent = el.value;
+    }
+
     try {
-        await fetch('/api/kv', { 
-            method: 'POST', 
-            headers: {'Content-Type': 'application/json'}, 
-            body: JSON.stringify({ key: 'page:' + pageId + ':editor_mode', content: selected }) 
-        });
-        await fetch('/api/kv', { 
-            method: 'POST', 
-            headers: {'Content-Type': 'application/json'}, 
-            body: JSON.stringify({ key: 'page:' + pageId + ':mode', content: selected }) 
-        });
+        const promises = [
+            fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':editor_mode', content: selected }) }),
+            fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':mode', content: selected }) })
+        ];
+
+        if (rawContent) {
+            promises.push(
+                fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':raw', content: rawContent }) }),
+                fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':content', content: clientSideMinify(rawContent) }) })
+            );
+        }
+
+        await Promise.all(promises);
 
         showToast("Editor mode successfully saved!");
 
@@ -1131,7 +1174,6 @@ window.saveEditorMode = async function(pageId, evt) {
 
         if (btn) setButtonLoading(btn, false);
 
-        // Langsung panggil openPageManager dengan forcedMode untuk UI instan tanpa menunggu KV GET delay
         openPageManager(pageId, pageTitle, fileName, selected);
     } catch(e) { 
         if (btn) setButtonLoading(btn, false);
