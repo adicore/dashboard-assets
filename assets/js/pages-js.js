@@ -539,9 +539,6 @@ function renderPagesTableHtml(pages) {
     setTimeout(ensureAddToAnyScript, 100);
 }
 
-// -------------------------------------------------------------
-// GITHUB DELETE PROMPT FUNCTION
-// -------------------------------------------------------------
 window.showGithubDeletePrompt = function(deletedFilesArray) {
     if(!deletedFilesArray || deletedFilesArray.length === 0) return;
     
@@ -587,9 +584,6 @@ window.showGithubDeletePrompt = function(deletedFilesArray) {
     bsModal.show();
 };
 
-// -------------------------------------------------------------
-// BULK ACTION EXECUTION (ALL TAB)
-// -------------------------------------------------------------
 window.executePageBulkAction = async function() {
     const action = document.getElementById('bulkPageActionSelect').value;
     const checkboxes = document.querySelectorAll('.page-checkbox:checked');
@@ -629,9 +623,6 @@ window.executePageBulkAction = async function() {
     }
 };
 
-// -------------------------------------------------------------
-// BULK ACTION EXECUTION (TRASH TAB)
-// -------------------------------------------------------------
 window.executeTrashBulkAction = async function() {
     const action = document.getElementById('bulkTrashActionSelect').value;
     const checkboxes = document.querySelectorAll('.page-checkbox:checked');
@@ -686,9 +677,6 @@ window.executeTrashBulkAction = async function() {
     }
 };
 
-// -------------------------------------------------------------
-// INDIVIDUAL PAGE ACTIONS FUNCTION (PUBLISH, DRAFT, TRASH, DELETE)
-// -------------------------------------------------------------
 window.performPageAction = async function(pageId, action) {
     if (action === 'delete' && !confirm("Permanently delete this page?")) return;
     if (action === 'trash' && !confirm("Move this page to trash?")) return;
@@ -768,9 +756,6 @@ window.openNewStaticPageEditor = async function() {
     }
 };
 
-// =============================================================
-// OPEN PAGE MANAGER (RETRIEVAL METADATA & KONTEN LANGSUNG DARI D1/GITHUB)
-// =============================================================
 window.openPageManager = async function(pageId, pageName, fileName, forcedMode = null) {
     if (window.tinymce && tinymce.get('pageTinyMceArea')) {
         tinymce.get('pageTinyMceArea').remove();
@@ -1003,9 +988,6 @@ window.publishPageDirect = function() {
     saveStaticPageUnified('published');
 };
 
-// =============================================================
-// UNIFIED SAVE PAGE (METADATA D1 & PUSH DISPATCH SINKRONISASI)
-// =============================================================
 window.saveStaticPageUnified = async function(targetStatus = 'draft') {
     const oldPageId = window.currentPageId;
     const titleInput = document.getElementById('modalPageTitleInput-' + oldPageId) || document.getElementById('inpStaticPageTitle');
@@ -1050,7 +1032,6 @@ window.saveStaticPageUnified = async function(targetStatus = 'draft') {
             noFollow: document.getElementById('modalSeoNoFollow-' + oldPageId)?.checked || false
         };
 
-        // Kirim payload lengkap ke backend D1 & GitHub
         const pubRes = await fetch('/api/publish', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -1066,7 +1047,6 @@ window.saveStaticPageUnified = async function(targetStatus = 'draft') {
             })
         });
 
-        // Simpan status & metadata ke D1 Database
         await fetch('/api/pages/create', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -1083,7 +1063,6 @@ window.saveStaticPageUnified = async function(targetStatus = 'draft') {
             })
         });
 
-        // AKTIFKAN INDIKATOR SYNC PENDING DI TOOLBAR/NAVBAR
         document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
         localStorage.setItem('sync_pending', 'true');
 
@@ -1106,9 +1085,6 @@ window.saveStaticPageUnified = async function(targetStatus = 'draft') {
     }
 };
 
-// =============================================================
-// SAVE EDITOR MODE (METADATA D1 + SYNC PENDING TRIGGER)
-// =============================================================
 window.saveEditorMode = async function(pageId, evt) {
     if (evt) evt.preventDefault();
     const btn = evt ? evt.currentTarget : document.querySelector(`button[onclick*="saveEditorMode('${pageId}')"]`);
@@ -1152,7 +1128,6 @@ window.saveEditorMode = async function(pageId, evt) {
     }
 };
 
-// --- SECTIONS & BLOCKS LOGIC ---
 async function loadPageSectionsUI(pageId) {
     const container = document.getElementById(`sectionsListContainer-${pageId}`);
     if (!container) return;
@@ -1333,7 +1308,7 @@ window.openSectionRepeaterModal = async function(pageId, secId, secName) {
             await saveSectionsToKv(pageId, sections);
 
             bootstrap.Modal.getInstance(document.getElementById('sectionRepeaterModal')).hide();
-            showToast("Repeater data successfully saved locally!");
+            showToast("Repeater data successfully saved!");
             
             document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
             localStorage.setItem('sync_pending', 'true');
@@ -1351,14 +1326,19 @@ async function saveSectionsToKv(pageId, sections) {
     const combinedHtml = sections.map(s => s.content).join('\n');
     await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':content', content: clientSideMinify(combinedHtml) }) });
     
-    // Simpan sec_list ke D1 Database
+    const pageTitleInput = document.getElementById('modalPageTitleInput-' + pageId);
+    const pageTitle = pageTitleInput ? pageTitleInput.value : pageId;
+    const pageFilenameInput = document.getElementById('modalPageSlugInput-' + pageId);
+    const pageFilename = pageFilenameInput ? pageFilenameInput.value : `${pageId}.html`;
+
     await fetch('/api/pages/create', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ id: pageId, name: window.currentPageId || pageId, filename: window.currentFilename || `${pageId}.html`, sec_list: sections })
+        body: JSON.stringify({ id: pageId, name: pageTitle, filename: pageFilename, sec_list: sections })
     });
 }
 
+// FIX: Pastikan Block Library memuat item dari endpoint kv-blocks.js
 window.openAddSectionModal = async function(pageId) {
     const existingModal = document.getElementById('addSectionModal');
     if (existingModal) existingModal.remove();
@@ -1384,11 +1364,21 @@ window.openAddSectionModal = async function(pageId) {
     const listContainer = document.getElementById('libraryBlocksSelectList');
     if (listContainer) {
         listContainer.innerHTML = '';
+        if (!window.availableBlocksList || window.availableBlocksList.length === 0) {
+            try {
+                // Endpoint ini mengarah ke file src/api/kv-blocks.js
+                const blockRes = await fetch('/api/blocks/list');
+                if (blockRes.ok) window.availableBlocksList = await blockRes.json();
+            } catch (e) { window.availableBlocksList = []; }
+        }
+
         if (window.availableBlocksList && window.availableBlocksList.length > 0) {
             window.availableBlocksList.forEach(bId => {
                 listContainer.innerHTML += `<div class="list-group-item d-flex justify-content-between align-items-center"><span class="font-monospace small">${bId}</span><button class="btn btn-sm btn-primary px-3" onclick="addSectionFromLibrary('${pageId}', '${bId}')">Select</button></div>`;
             });
-        } else listContainer.innerHTML = '<div class="text-center py-2 text-muted small fst-italic">No blocks found in library.</div>';
+        } else {
+            listContainer.innerHTML = '<div class="text-center py-2 text-muted small fst-italic">No blocks found in library.</div>';
+        }
     }
     new bootstrap.Modal(document.getElementById('addSectionModal')).show();
 };
@@ -1410,43 +1400,51 @@ window.createBlankSectionItem = async function(pageId) {
     showToast("New section successfully added!");
 };
 
+// FIX: Pastikan Block di-fetch dengan key 'block:[id]' dari KV tanpa suffix saat dipanggil
 window.addSectionFromLibrary = async function(pageId, blockId) {
     let blockContent = '';
-    const keysToTry = [
-        'block:' + blockId + ':raw',
-        'block:' + blockId,
-        'block:' + blockId + ':content'
-    ];
     
-    for (let k of keysToTry) {
-        try {
-            const res = await fetch('/api/kv?key=' + encodeURIComponent(k));
-            if (res.ok) {
-                const txt = await res.text();
-                if (txt && txt.trim() !== '' && txt !== 'Failed to load.') {
-                    blockContent = txt;
-                    break;
-                }
+    try {
+        const res = await fetch('/api/kv?key=' + encodeURIComponent('block:' + blockId));
+        if (res.ok) {
+            const txt = await res.text();
+            if (txt && txt.trim() !== '' && txt !== 'Failed to load.') {
+                blockContent = txt;
             }
-        } catch(e) {}
-    }
+        }
+    } catch(e) {}
 
     const secId = blockId; 
+    
     try {
         await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':section:' + secId + ':raw', content: blockContent }) });
         await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':section:' + secId, content: clientSideMinify(blockContent) }) });
     } catch(e) {}
 
     let sections = [];
-    try { const res = await fetch('/api/kv?key=page:' + pageId + ':sections'); if (res.ok) { const txt = await res.text(); if (txt) sections = JSON.parse(txt); } } catch(e) {}
+    try { 
+        const res = await fetch('/api/kv?key=page:' + pageId + ':sections'); 
+        if (res.ok) { 
+            const txt = await res.text(); 
+            if (txt) sections = JSON.parse(txt); 
+        } 
+    } catch(e) {}
 
     const existingIndex = sections.findIndex(s => s.id === secId);
-    if (existingIndex >= 0) sections[existingIndex].content = blockContent || '';
-    else sections.push({ id: secId, name: blockId, content: blockContent || '' });
+    if (existingIndex >= 0) {
+        sections[existingIndex].content = blockContent || '';
+    } else {
+        sections.push({ id: secId, name: blockId, content: blockContent || '' });
+    }
 
     await saveSectionsToKv(pageId, sections);
+    
     const modalEl = document.getElementById('addSectionModal');
-    if (modalEl) { const bsModal = bootstrap.Modal.getInstance(modalEl); if (bsModal) bsModal.hide(); }
+    if (modalEl) { 
+        const bsModal = bootstrap.Modal.getInstance(modalEl); 
+        if (bsModal) bsModal.hide(); 
+    }
+    
     loadPageSectionsUI(pageId);
     
     document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
@@ -1588,7 +1586,7 @@ window.openGrapesJSBuilder = async function(pageId) {
 
                     await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:${pageId}:builder_json', content: JSON.stringify(projectData) }) });
 
-                    window.parent.postMessage({ type: 'SHOW_TOAST', message: 'GrapesJS design successfully saved locally!' }, '*');
+                    window.parent.postMessage({ type: 'SHOW_TOAST', message: 'GrapesJS design successfully saved!' }, '*');
                 } catch(e) { window.parent.postMessage({ type: 'SHOW_TOAST', message: 'Failed to save GrapesJS design.', typeToast: 'danger' }, '*'); } 
                 finally { btnSave.innerHTML = '<i class="bi bi-floppy"></i> Save Design'; btnSave.disabled = false; }
             });
@@ -1605,7 +1603,7 @@ window.addEventListener('message', function(event) {
     if (event.data.type === 'SHOW_TOAST') {
         showToast(event.data.message, event.data.typeToast || 'success');
         
-        if(event.data.message.toLowerCase().includes('saved locally') || event.data.message.toLowerCase().includes('saved')) {
+        if(event.data.message.toLowerCase().includes('saved')) {
             document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
             localStorage.setItem('sync_pending', 'true');
         }
@@ -1759,7 +1757,7 @@ document.addEventListener("DOMContentLoaded", async function() {
     
     try {
         const blockRes = await fetch('/api/blocks/list');
-        window.availableBlocksList = await blockRes.json();
+        if (blockRes.ok) window.availableBlocksList = await blockRes.json();
     } catch (e) { window.availableBlocksList = []; }
 
     await loadStaticPages();
