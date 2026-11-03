@@ -468,7 +468,6 @@ function renderPagesTableHtml(pages) {
 
     pages.forEach(p => {
         const isOwner = (p.author_email || '') === userEmail;
-        // Default page is 'index' only
         const isDefaultPage = ['index'].includes(p.id);
         const pageStatus = p.status || 'draft';
         let statusBadge = '';
@@ -483,7 +482,6 @@ function renderPagesTableHtml(pages) {
 
         let actionButtonsHtml = '';
         if (pageStatus === 'trash') {
-            // Minimalist view for Trash tab
             actionButtonsHtml = `
                 <div class="d-flex justify-content-end align-items-center gap-3">
                     <button type="button" class="btn btn-link text-warning p-0 border-0" onclick="performPageAction('${p.id}', 'draft');" title="Restore to Draft">
@@ -499,7 +497,6 @@ function renderPagesTableHtml(pages) {
                 </div>
             `;
         } else {
-            // Minimalist view for All tab
             actionButtonsHtml = `
                 <div class="d-flex justify-content-end align-items-center gap-3">
                     <a href="${fullPageUrl}" target="_blank" class="text-secondary p-0" title="View Page">
@@ -709,7 +706,6 @@ window.performPageAction = async function(pageId, action) {
                 deletedFilesToSync = data.deleted_files;
             }
 
-            // Enable Sync & Deploy indicator in navbar
             document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
             localStorage.setItem('sync_pending', 'true');
 
@@ -768,7 +764,10 @@ window.openNewStaticPageEditor = async function() {
     }
 };
 
-window.openPageManager = async function(pageId, pageName, fileName) {
+// =============================================================
+// OPEN PAGE MANAGER (DENGAN PENANGANAN FORCED MODE & SANITIZING)
+// =============================================================
+window.openPageManager = async function(pageId, pageName, fileName, forcedMode = null) {
     window.currentPageId = pageId;
     window.currentFilename = fileName;
 
@@ -799,11 +798,18 @@ window.openPageManager = async function(pageId, pageName, fileName) {
         if(resSeo.ok) { const txt = await resSeo.text(); if(txt) seoData = JSON.parse(txt); }
     } catch(e){}
 
-    let currentEditorMode = 'block_library';
-    try {
-        const resMode = await fetch('/api/kv?key=page:'+pageId+':editor_mode');
-        if(resMode.ok) { const txt = await resMode.text(); if(txt) currentEditorMode = txt; }
-    } catch(e){}
+    let currentEditorMode = forcedMode || 'block_library';
+    if (!forcedMode) {
+        try {
+            const resMode = await fetch('/api/kv?key=page:'+pageId+':editor_mode');
+            if(resMode.ok) { 
+                const txt = await resMode.text(); 
+                if(txt && txt.trim() !== '' && txt !== 'Failed to load.') { 
+                    currentEditorMode = txt.trim().replace(/^"|"$/g, ''); 
+                } 
+            }
+        } catch(e){}
+    }
 
     let pageContentForTinyMce = '';
     if (currentEditorMode === 'tinymce') {
@@ -815,6 +821,7 @@ window.openPageManager = async function(pageId, pageName, fileName) {
                 if (resC2.ok) pageContentForTinyMce = await resC2.text();
             }
         } catch(e) {}
+        if (pageContentForTinyMce === 'Failed to load.') pageContentForTinyMce = '';
     }
 
     container.innerHTML = `
@@ -833,27 +840,27 @@ window.openPageManager = async function(pageId, pageName, fileName) {
         <div class="row g-3">
             <div class="col-md-4">
                 <div class="form-check border p-3 rounded-3 h-100 ${currentEditorMode === 'tinymce' ? 'border-warning bg-light' : ''}">
-                    <input class="form-check-input" type="radio" name="editorMode-${pageId}" id="modeTinyMce" value="tinymce" ${currentEditorMode === 'tinymce' ? 'checked' : ''}>
-                    <label class="form-check-label fw-bold ms-2 text-warning" for="modeTinyMce">Option 1: TinyMCE Editor</label>
+                    <input class="form-check-input" type="radio" name="editorMode-${pageId}" id="modeTinyMce-${pageId}" value="tinymce" ${currentEditorMode === 'tinymce' ? 'checked' : ''}>
+                    <label class="form-check-label fw-bold ms-2 text-warning" for="modeTinyMce-${pageId}">Option 1: TinyMCE Editor</label>
                     <p class="small text-muted mt-2 mb-0">Visual rich text editor directly for paragraphs, articles, or concise pages.</p>
                 </div>
             </div>
             <div class="col-md-4">
                 <div class="form-check border p-3 rounded-3 h-100 ${currentEditorMode === 'block_library' ? 'border-success bg-light' : ''}">
-                    <input class="form-check-input" type="radio" name="editorMode-${pageId}" id="modeBlockLib" value="block_library" ${currentEditorMode === 'block_library' ? 'checked' : ''}>
-                    <label class="form-check-label fw-bold ms-2 text-success" for="modeBlockLib">Option 2: Block Library</label>
+                    <input class="form-check-input" type="radio" name="editorMode-${pageId}" id="modeBlockLib-${pageId}" value="block_library" ${currentEditorMode === 'block_library' ? 'checked' : ''}>
+                    <label class="form-check-label fw-bold ms-2 text-success" for="modeBlockLib-${pageId}">Option 2: Block Library</label>
                     <p class="small text-muted mt-2 mb-0">Manage pages using modular section structures and custom blocks from the library.</p>
                 </div>
             </div>
             <div class="col-md-4">
                 <div class="form-check border p-3 rounded-3 h-100 ${currentEditorMode === 'grapesjs' ? 'border-primary bg-light' : ''}">
-                    <input class="form-check-input" type="radio" name="editorMode-${pageId}" id="modeGrapes" value="grapesjs" ${currentEditorMode === 'grapesjs' ? 'checked' : ''}>
-                    <label class="form-check-label fw-bold ms-2 text-primary" for="modeGrapes">Option 3: GrapesJS Builder</label>
+                    <input class="form-check-input" type="radio" name="editorMode-${pageId}" id="modeGrapes-${pageId}" value="grapesjs" ${currentEditorMode === 'grapesjs' ? 'checked' : ''}>
+                    <label class="form-check-label fw-bold ms-2 text-primary" for="modeGrapes-${pageId}">Option 3: GrapesJS Builder</label>
                     <p class="small text-muted mt-2 mb-0">Pure visual drag & drop using default built-in widgets.</p>
                 </div>
             </div>
         </div>
-        <button class="btn btn-sm wp-btn-primary mt-3 px-4" onclick="saveEditorMode('${pageId}')"><i class="bi bi-floppy me-1"></i> Save Editor Mode</button>
+        <button type="button" class="btn btn-sm wp-btn-primary mt-3 px-4" onclick="saveEditorMode('${pageId}', event)"><i class="bi bi-floppy me-1"></i> Save Editor Mode</button>
     </div>
 
     <div class="row g-4">
@@ -874,7 +881,7 @@ window.openPageManager = async function(pageId, pageName, fileName) {
                 <div class="mb-3"><i class="bi bi-magic text-primary" style="font-size: 3.5rem;"></i></div>
                 <h4 class="fw-bold text-dark">GrapesJS Visual Builder</h4>
                 <p class="text-muted mb-4 mx-auto" style="max-width:500px;">Design pages visually using drag & drop default standard widgets.</p>
-                <button id="btnOpenBuilder" class="btn btn-lg wp-btn-primary px-5 py-2 shadow-sm rounded-pill" onclick="openGrapesJSBuilder('\${pageId}')">
+                <button id="btnOpenBuilder" class="btn btn-lg wp-btn-primary px-5 py-2 shadow-sm rounded-pill" onclick="openGrapesJSBuilder('${pageId}')">
                     <i class="bi bi-layout-wtf me-2"></i> Open GrapesJS Builder
                 </button>
             </div>` : `
@@ -884,10 +891,10 @@ window.openPageManager = async function(pageId, pageName, fileName) {
                         <h4 class="fw-bold text-dark mb-1"><i class="bi bi-layers text-success me-2"></i> Sections &amp; Blocks Layout</h4>
                         <p class="text-muted small mb-0">Manage your page section layout and blocks from the library.</p>
                     </div>
-                    <button class="btn btn-sm btn-primary px-3 py-2 shadow-sm" onclick="openAddSectionModal('\${pageId}')"><i class="bi bi-plus-lg me-1"></i> Add Section</button>
+                    <button class="btn btn-sm btn-primary px-3 py-2 shadow-sm" onclick="openAddSectionModal('${pageId}')"><i class="bi bi-plus-lg me-1"></i> Add Section</button>
                 </div>
                 <hr class="text-muted opacity-25 my-3">
-                <div id="sectionsListContainer-\${pageId}" class="d-flex flex-column gap-3">
+                <div id="sectionsListContainer-${pageId}" class="d-flex flex-column gap-3">
                     <div class="text-center py-3 text-muted small fst-italic">Loading block layout...</div>
                 </div>
             </div>`}
@@ -1032,7 +1039,7 @@ window.saveStaticPageUnified = async function(targetStatus = 'draft') {
         };
 
         if (oldPageId !== newPageId) {
-            const suffixes = ['', ':raw', ':content', ':seo', ':sections', ':css', ':js', ':editor_mode', ':builder_json', ':compiled'];
+            const suffixes = ['', ':raw', ':content', ':seo', ':sections', ':css', ':js', ':editor_mode', ':mode', ':builder_json', ':compiled'];
             for (let sfx of suffixes) {
                 try {
                     const resKv = await fetch('/api/kv?key=' + oldPageId + sfx);
@@ -1094,17 +1101,42 @@ window.saveStaticPageUnified = async function(targetStatus = 'draft') {
     }
 };
 
-window.saveEditorMode = async function(pageId) {
-    const selected = document.querySelector(`input[name="editorMode-${pageId}"]:checked`)?.value || 'block_library';
+// =============================================================
+// SAVE EDITOR MODE (FUNGSI PERBAIKAN DENGAN INSTANT SWITCHING)
+// =============================================================
+window.saveEditorMode = async function(pageId, evt) {
+    if (evt) evt.preventDefault();
+    const btn = evt ? evt.currentTarget : document.querySelector(`button[onclick*="saveEditorMode('${pageId}')"]`);
+    if (btn) setButtonLoading(btn, true, "Saving Mode...");
+
+    const selectedRadio = document.querySelector(`input[name="editorMode-${pageId}"]:checked`);
+    const selected = selectedRadio ? selectedRadio.value : 'block_library';
+
     try {
-        await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':editor_mode', content: selected }) });
+        await fetch('/api/kv', { 
+            method: 'POST', 
+            headers: {'Content-Type': 'application/json'}, 
+            body: JSON.stringify({ key: 'page:' + pageId + ':editor_mode', content: selected }) 
+        });
+        await fetch('/api/kv', { 
+            method: 'POST', 
+            headers: {'Content-Type': 'application/json'}, 
+            body: JSON.stringify({ key: 'page:' + pageId + ':mode', content: selected }) 
+        });
+
         showToast("Editor mode successfully saved!");
-        setTimeout(() => {
-            const pageTitle = document.getElementById('modalPageTitleInput-' + pageId)?.value || 'Page';
-            const fileName = document.getElementById('modalPageSlugInput-' + pageId)?.value || 'page.html';
-            openPageManager(pageId, pageTitle, fileName);
-        }, 600);
-    } catch(e) { showToast("Failed to save editor mode.", "danger"); }
+
+        const pageTitle = document.getElementById('modalPageTitleInput-' + pageId)?.value || 'Page';
+        const fileName = document.getElementById('modalPageSlugInput-' + pageId)?.value || 'page.html';
+
+        if (btn) setButtonLoading(btn, false);
+
+        // Langsung panggil openPageManager dengan forcedMode untuk UI instan tanpa menunggu KV GET delay
+        openPageManager(pageId, pageTitle, fileName, selected);
+    } catch(e) { 
+        if (btn) setButtonLoading(btn, false);
+        showToast("Failed to save editor mode.", "danger"); 
+    }
 };
 
 // --- SECTIONS & BLOCKS LOGIC ---
@@ -1267,10 +1299,10 @@ window.openSectionRepeaterModal = async function(pageId, secId, secName) {
             let linkClose = item.url ? `</a>` : '';
             generatedHtml += `
             <div class="card mb-3 border shadow-sm p-3" style="${bgStyle}">
-                ${imgTag ? `<div class="mb-2">\${imgTag}</div>` : ''}
+                ${imgTag ? `<div class="mb-2">${imgTag}</div>` : ''}
                 ${linkOpen}<h5 class="fw-bold mb-1">${item.title || ''}</h5>${linkClose}
-                ${item.subtitle ? `<h6 class="text-muted small mb-2">\${item.subtitle}</h6>` : ''}
-                ${item.description ? `<div class="text-secondary small">\${item.description}</div>` : ''}
+                ${item.subtitle ? `<h6 class="text-muted small mb-2">${item.subtitle}</h6>` : ''}
+                ${item.description ? `<div class="text-secondary small">${item.description}</div>` : ''}
             </div>`;
         });
         generatedHtml += '</div>';
@@ -1525,6 +1557,7 @@ window.openGrapesJSBuilder = async function(pageId) {
                     await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:${pageId}:builder_json', content: JSON.stringify(projectData) }) });
                     await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:${pageId}:content', content: minifiedHtml }) });
                     await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:${pageId}:css', content: cssData }) });
+                    await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:${pageId}:editor_mode', content: 'grapesjs' }) });
                     await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:${pageId}:mode', content: 'grapesjs' }) });
 
                     window.parent.postMessage({ type: 'SHOW_TOAST', message: 'GrapesJS design successfully saved locally!' }, '*');
