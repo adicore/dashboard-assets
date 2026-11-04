@@ -1,6 +1,7 @@
 /**
  * assets/js/blocks-js.js
  * Frontend JavaScript untuk Management Library Block CMS
+ * Dilengkapi Client-Side Minify & Unminify Otomatis untuk File HTML Block
  */
 
 // ==========================================
@@ -34,6 +35,55 @@ const translations = {
         label_blockid: "Unique Block ID"
     }
 };
+
+// ==========================================
+// CLIENT-SIDE MINIFY & UNMINIFY UTILITIES
+// ==========================================
+function clientSideMinify(html) {
+    if (!html) return "";
+    return html
+        .replace(/<!--[\s\S]*?-->/gis, (match) => {
+            return (match.includes('LOOP') || match.includes('IF_HAS_CHILDREN') || match.includes('END_IF') || match.includes('META_INJECT') || match.includes('POST_DATA')) ? match : '';
+        })
+        .replace(/\s+/g, ' ')
+        .replace(/>\s+</g, '><')
+        .trim();
+}
+
+function clientSideUnminify(htmlContent) {
+    if (!htmlContent || typeof htmlContent !== 'string') return "";
+    let formatted = '';
+    let indent = '';
+    let indentTab = '    '; 
+    
+    htmlContent = htmlContent.replace(/>\s+</g, '>\n<');
+    let lines = htmlContent.split('\n');
+    
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i].trim();
+        if (!line) continue;
+
+        if (line.match(/^<\/\w/)) {
+            if (indent.length >= indentTab.length) {
+                indent = indent.substring(indentTab.length);
+            }
+        }
+
+        formatted += indent + line + '\n';
+
+        if (line.match(/^<([a-zA-Z0-9\-]+)(?![\/:])(?:.|\s)*?>$/)) {
+            let matchTag = line.match(/^<([^\s>]+)/);
+            if (matchTag) {
+                let tagName = matchTag[1].toLowerCase();
+                const voidElements = ['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr'];
+                if (!voidElements.includes(tagName) && !line.endsWith('/>')) {
+                    indent += indentTab;
+                }
+            }
+        }
+    }
+    return formatted.trim();
+}
 
 // ==========================================
 // GLOBAL & UI FUNCTIONS
@@ -205,11 +255,13 @@ window.createNewBlock = async function() {
         return showToast("Invalid Block ID!", "warning");
     }
     
+    const initialHtml = clientSideMinify(`<div class="container py-4">\n    <h3>${bId}</h3>\n</div>`);
+
     try {
         await fetch('/api/blocks/save-html', {
             method: 'POST',
             headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ blockId: bId, html: '<div class="container py-4">\n    <h3>' + bId + '</h3>\n</div>' })
+            body: JSON.stringify({ blockId: bId, html: initialHtml })
         });
         setButtonLoading(btn, false);
         showToast("New block component successfully created in blocks/ folder on GitHub!");
@@ -235,7 +287,7 @@ window.deleteBlock = async function(bId) {
         });
         bulkModal.hide();
         if (res.ok) {
-            showToast("Block successfully deleted from blocks/ and repeater/ folders!");
+            showToast("Block successfully deleted from blocks/ and blocks/repeater/ folders!");
             loadBlocks();
         } else {
             showToast("Failed to delete block.", "danger");
@@ -371,7 +423,7 @@ window.saveDynamicBlockData = async function() {
     const alertBox = document.getElementById('repeaterAlert');
     if(alertBox) {
         alertBox.className = "alert alert-info py-1 px-3 mb-0 small";
-        alertBox.innerText = "Saving data to repeater/ folder on GitHub...";
+        alertBox.innerText = "Saving data to blocks/repeater/ folder on GitHub...";
         alertBox.classList.remove('d-none');
     }
     
@@ -385,7 +437,7 @@ window.saveDynamicBlockData = async function() {
         if(res.ok) {
             if(alertBox) {
                 alertBox.className = "alert alert-success py-1 px-3 mb-0 small";
-                alertBox.innerText = "Repeater data successfully saved to repeater/ on GitHub!";
+                alertBox.innerText = "Repeater data successfully saved to blocks/repeater/ on GitHub!";
             }
             showToast("Repeater block data successfully saved to GitHub!");
             setTimeout(() => bootstrap.Modal.getInstance(document.getElementById('dynamicBlockModal')).hide(), 1000);
@@ -402,7 +454,7 @@ window.saveDynamicBlockData = async function() {
 };
 
 // ==========================================
-// CODEMIRROR OVERLAY EDITOR
+// CODEMIRROR OVERLAY EDITOR (WITH UNMINIFY)
 // ==========================================
 window.openEditor = async function(key, title) {
     document.getElementById('currentEditKey').value = key;
@@ -428,6 +480,11 @@ window.openEditor = async function(key, title) {
         content = "Failed to load content.";
     }
     
+    // UNMINIFY: Merapikan HTML jika ditarik dari GitHub agar mudah dibaca di CodeMirror
+    if (mode === 'htmlmixed' && content && content !== "Failed to load content.") {
+        content = clientSideUnminify(content);
+    }
+
     if (ed) ed.value = content;
     
     setTimeout(() => {
@@ -450,8 +507,11 @@ window.saveEditorDataDualStorage = async function() {
     const btn = document.getElementById('btnSaveEditor');
     setButtonLoading(btn, true, "Saving to GitHub...");
     const key = document.getElementById('currentEditKey').value;
-    const content = window.currentCodeMirrorInstance ? window.currentCodeMirrorInstance.getValue() : document.getElementById('htmlEditor').value;
+    const rawContent = window.currentCodeMirrorInstance ? window.currentCodeMirrorInstance.getValue() : document.getElementById('htmlEditor').value;
     
+    // MINIFY: Mengompres HTML sebelum disimpan ke GitHub
+    const minifiedContent = key.startsWith('block:') ? clientSideMinify(rawContent) : rawContent;
+
     try {
         let res;
         if (key.startsWith('block:')) {
@@ -459,19 +519,19 @@ window.saveEditorDataDualStorage = async function() {
             res = await fetch('/api/blocks/save-html', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ blockId, html: content })
+                body: JSON.stringify({ blockId, html: minifiedContent })
             });
         } else {
             res = await fetch('/api/kv', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ key, content })
+                body: JSON.stringify({ key, content: minifiedContent })
             });
         }
 
         if(res.ok){
             setButtonLoading(btn, false);
-            showToast("Block HTML successfully saved to blocks/ on GitHub!");
+            showToast("Block HTML successfully minified and saved to blocks/ on GitHub!");
             setTimeout(() => {
                 closeCustomEditor();
                 loadBlocks();
