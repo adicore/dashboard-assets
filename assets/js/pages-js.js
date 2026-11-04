@@ -1390,10 +1390,20 @@ async function saveSectionsToKv(pageId, sections) {
     const pageFilenameInput = document.getElementById('modalPageSlugInput-' + pageId);
     const pageFilename = pageFilenameInput ? pageFilenameInput.value : `${pageId}.html`;
 
+    // Ambil mode editor yang sedang aktif saat ini agar tidak tertimpa/reset
+    const selectedRadio = document.querySelector(`input[name="editorMode-${pageId}"]:checked`);
+    const currentMode = selectedRadio ? selectedRadio.value : 'block_library';
+
     await fetch('/api/pages/create', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ id: pageId, name: pageTitle, filename: pageFilename, sec_list: sections })
+        body: JSON.stringify({ 
+            id: pageId, 
+            name: pageTitle, 
+            filename: pageFilename, 
+            mode: currentMode,
+            sec_list: sections 
+        })
     });
 }
 
@@ -1462,38 +1472,24 @@ window.addSectionFromLibrary = async function(pageId, blockId) {
     let blockContent = '';
     
     try {
-        // 1. Coba ambil langsung dari endpoint block-data
-        const res = await fetch('/api/block-data?id=' + encodeURIComponent(blockId));
-        if (res.ok) {
-            const data = await res.json().catch(() => null);
-            if (data) {
-                // Jika data berupa array repeater atau string HTML
-                blockContent = typeof data === 'string' ? data : (data.html || JSON.stringify(data));
-            } else {
-                blockContent = await res.text();
-            }
+        // 1. Ambil file HTML komponen langsung dari folder components/ via KV
+        const resComp = await fetch('/api/kv?key=' + encodeURIComponent('components/' + blockId + '.html'));
+        if (resComp.ok) {
+            blockContent = await resComp.text();
         }
         
-        // 2. Jika masih kosong, coba ambil dari endpoint KV backend standar
-        if (!blockContent || blockContent === '[]' || blockContent === 'null') {
+        // 2. Fallback: Coba ambil dari KV key block:[id] jika komponen kosong
+        if (!blockContent || blockContent === 'Failed to load.') {
             const resKv = await fetch('/api/kv?key=' + encodeURIComponent('block:' + blockId));
             if (resKv.ok) {
                 blockContent = await resKv.text();
-            }
-        }
-
-        // 3. Fallback terakhir: Ambil dari file komponen GitHub melalui KV
-        if (!blockContent || blockContent === 'Failed to load.') {
-            const resGh = await fetch('/api/kv?key=' + encodeURIComponent('components/' + blockId + '.html'));
-            if (resGh.ok) {
-                blockContent = await resGh.text();
             }
         }
     } catch(e) {
         console.error("Gagal mengambil library block:", e);
     }
 
-    // Pastikan konten tidak mentah/kosong total
+    // Fallback terakhir jika benar-benar kosong
     if (!blockContent || blockContent === 'Failed to load.' || blockContent === '[]') {
         blockContent = `<div class="container py-4"><h3>${blockId}</h3><p>Konten blok berhasil dimuat.</p></div>`;
     }
