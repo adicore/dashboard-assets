@@ -1,7 +1,7 @@
 /**
  * assets/js/pages-js.js
  * Frontend JavaScript untuk Editor Halaman Statis & Manajemen CMS
- * Dilengkapi Client-Side Minify/Unminify & Integrasi Repository GitHub
+ * Dilengkapi Client-Side Minify/Unminify, Perbaikan Library Block, & Persistensi Mode Editor
  */
 
 // ==========================================
@@ -838,7 +838,6 @@ window.openPageManager = async function(pageId, pageName, fileName, forcedMode =
     let currentEditorMode = forcedMode || pageDetail.mode || 'tinymce';
     let pageContentForTinyMce = pageDetail.content || '';
 
-    // Ambil konten raw dari GitHub/KV jika kosong, lalu lakukan Unminify agar readable di dashboard
     if (!pageContentForTinyMce && currentEditorMode === 'tinymce') {
         try {
             const resContent = await fetch('/api/kv?key=page:' + pageId + ':content');
@@ -1070,7 +1069,6 @@ window.saveStaticPageUnified = async function(targetStatus = 'draft') {
             if (el) rawContent = el.value;
         }
 
-        // Lakukan MINIFY di sisi klien sebelum dikirim ke server/repo GitHub
         const minifiedContent = clientSideMinify(rawContent);
 
         const selectedRadio = document.querySelector(`input[name="editorMode-${oldPageId}"]:checked`);
@@ -1143,7 +1141,7 @@ window.saveEditorMode = async function(pageId, evt) {
     if (btn) setButtonLoading(btn, true, "Saving Mode...");
 
     const selectedRadio = document.querySelector(`input[name="editorMode-${pageId}"]:checked`);
-    const selected = selectedRadio ? selectedRadio.value : 'tinymce';
+    const selectedMode = selectedRadio ? selectedRadio.value : 'tinymce';
 
     let rawContent = '';
     if (window.tinymce && tinymce.get('pageTinyMceArea')) {
@@ -1161,9 +1159,18 @@ window.saveEditorMode = async function(pageId, evt) {
                 id: pageId, 
                 name: document.getElementById('modalPageTitleInput-' + pageId)?.value || pageId,
                 filename: document.getElementById('modalPageSlugInput-' + pageId)?.value || `${pageId}.html`,
-                mode: selected,
+                mode: selectedMode,
                 content: clientSideMinify(rawContent)
             }) 
+        });
+
+        await fetch('/api/kv', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                key: `page:${pageId}:mode`,
+                content: selectedMode
+            })
         });
 
         showToast("Editor mode successfully saved!");
@@ -1173,7 +1180,7 @@ window.saveEditorMode = async function(pageId, evt) {
 
         if (btn) setButtonLoading(btn, false);
 
-        openPageManager(pageId, pageTitle, fileName, selected);
+        openPageManager(pageId, pageTitle, fileName, selectedMode);
     } catch(e) { 
         if (btn) setButtonLoading(btn, false);
         showToast("Failed to save editor mode.", "danger"); 
@@ -1450,15 +1457,23 @@ window.createBlankSectionItem = async function(pageId) {
     showToast("New section successfully added!");
 };
 
+// DIPERBAIKI: Mengambil library block langsung dari endpoint /api/block-data atau komponen GitHub
 window.addSectionFromLibrary = async function(pageId, blockId) {
     let blockContent = '';
     
     try {
-        const res = await fetch('/api/kv?key=' + encodeURIComponent('block:' + blockId));
+        const res = await fetch('/api/block-data?id=' + encodeURIComponent(blockId));
         if (res.ok) {
             const txt = await res.text();
-            if (txt && txt.trim() !== '' && txt !== 'Failed to load.') {
+            if (txt && txt.trim() !== '') {
                 blockContent = txt;
+            }
+        }
+        
+        if (!blockContent) {
+            const resKv = await fetch('/api/kv?key=' + encodeURIComponent('components/' + blockId + '.html'));
+            if (resKv.ok) {
+                blockContent = await resKv.text();
             }
         }
     } catch(e) {}
@@ -1704,7 +1719,6 @@ window.openEditor = async function(key, title) {
         } catch(e) {}
     }
     
-    // Lakukan unminify klien agar readable saat diedit di codemirror
     if (mode === 'htmlmixed' && content && content !== "Failed to load.") {
         content = clientSideUnminify(content);
     }
