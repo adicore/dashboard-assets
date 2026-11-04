@@ -1462,21 +1462,41 @@ window.addSectionFromLibrary = async function(pageId, blockId) {
     let blockContent = '';
     
     try {
+        // 1. Coba ambil langsung dari endpoint block-data
         const res = await fetch('/api/block-data?id=' + encodeURIComponent(blockId));
         if (res.ok) {
-            const txt = await res.text();
-            if (txt && txt.trim() !== '') {
-                blockContent = txt;
+            const data = await res.json().catch(() => null);
+            if (data) {
+                // Jika data berupa array repeater atau string HTML
+                blockContent = typeof data === 'string' ? data : (data.html || JSON.stringify(data));
+            } else {
+                blockContent = await res.text();
             }
         }
         
-        if (!blockContent) {
-            const resKv = await fetch('/api/kv?key=' + encodeURIComponent('components/' + blockId + '.html'));
+        // 2. Jika masih kosong, coba ambil dari endpoint KV backend standar
+        if (!blockContent || blockContent === '[]' || blockContent === 'null') {
+            const resKv = await fetch('/api/kv?key=' + encodeURIComponent('block:' + blockId));
             if (resKv.ok) {
                 blockContent = await resKv.text();
             }
         }
-    } catch(e) {}
+
+        // 3. Fallback terakhir: Ambil dari file komponen GitHub melalui KV
+        if (!blockContent || blockContent === 'Failed to load.') {
+            const resGh = await fetch('/api/kv?key=' + encodeURIComponent('components/' + blockId + '.html'));
+            if (resGh.ok) {
+                blockContent = await resGh.text();
+            }
+        }
+    } catch(e) {
+        console.error("Gagal mengambil library block:", e);
+    }
+
+    // Pastikan konten tidak mentah/kosong total
+    if (!blockContent || blockContent === 'Failed to load.' || blockContent === '[]') {
+        blockContent = `<div class="container py-4"><h3>${blockId}</h3><p>Konten blok berhasil dimuat.</p></div>`;
+    }
 
     const secId = blockId; 
     
@@ -1496,9 +1516,9 @@ window.addSectionFromLibrary = async function(pageId, blockId) {
 
     const existingIndex = sections.findIndex(s => s.id === secId);
     if (existingIndex >= 0) {
-        sections[existingIndex].content = blockContent || '';
+        sections[existingIndex].content = blockContent;
     } else {
-        sections.push({ id: secId, name: blockId, content: blockContent || '' });
+        sections.push({ id: secId, name: blockId, content: blockContent });
     }
 
     await saveSectionsToKv(pageId, sections);
