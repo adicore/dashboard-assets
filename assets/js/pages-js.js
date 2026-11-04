@@ -1472,33 +1472,36 @@ window.addSectionFromLibrary = async function(pageId, blockId) {
     let blockContent = '';
     
     try {
-        // Ambil langsung dari folder blocks/ di repository GitHub via KV/Fetch
-        const res = await fetch('/api/kv?key=' + encodeURIComponent('block_library:' + blockId));
+        // Ambil HTML blok dari folder blocks/ menggunakan key 'block:'
+        const res = await fetch('/api/kv?key=' + encodeURIComponent('block:' + blockId));
         if (res.ok) {
-            blockContent = await res.text();
-        }
-        
-        // Fallback endpoint jika kosong
-        if (!blockContent || blockContent === 'Failed to load.' || blockContent.trim() === '') {
-            const resComp = await fetch('/api/block-data?id=' + encodeURIComponent(blockId));
-            if (resComp.ok) {
-                const data = await resComp.json().catch(() => null);
-                if (data && data.html) blockContent = data.html;
+            const txt = await res.text();
+            if (txt && txt.trim() !== '' && txt !== 'Failed to load.') {
+                blockContent = txt;
             }
         }
     } catch(e) {
         console.error("Gagal memuat library block:", e);
     }
 
-    if (!blockContent || blockContent === 'Failed to load.' || blockContent === '[]' || blockContent.trim() === '') {
+    // Fallback darurat jika file HTML di GitHub belum terisi
+    if (!blockContent || blockContent.trim() === '') {
         blockContent = `<div class="container py-4"><h3>${blockId}</h3><p>Konten blok berhasil di-import.</p></div>`;
     }
 
     const secId = blockId; 
     
     try {
-        await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':section:' + secId + ':raw', content: blockContent }) });
-        await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':section:' + secId, content: clientSideMinify(blockContent) }) });
+        await fetch('/api/kv', { 
+            method: 'POST', 
+            headers: {'Content-Type': 'application/json'}, 
+            body: JSON.stringify({ key: 'page:' + pageId + ':section:' + secId + ':raw', content: blockContent }) 
+        });
+        await fetch('/api/kv', { 
+            method: 'POST', 
+            headers: {'Content-Type': 'application/json'}, 
+            body: JSON.stringify({ key: 'page:' + pageId + ':section:' + secId, content: clientSideMinify(blockContent) }) 
+        });
     } catch(e) {}
 
     let sections = [];
