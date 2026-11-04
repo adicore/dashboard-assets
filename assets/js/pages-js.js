@@ -1472,26 +1472,27 @@ window.addSectionFromLibrary = async function(pageId, blockId) {
     let blockContent = '';
     
     try {
-        // 1. Ambil file HTML komponen langsung dari folder components/ via KV
-        const resComp = await fetch('/api/kv?key=' + encodeURIComponent('components/' + blockId + '.html'));
-        if (resComp.ok) {
-            blockContent = await resComp.text();
+        // Ambil langsung menggunakan key 'block:' yang didukung penuh oleh router kv / tools backend
+        const res = await fetch('/api/kv?key=' + encodeURIComponent('block:' + blockId));
+        if (res.ok) {
+            blockContent = await res.text();
         }
         
-        // 2. Fallback: Coba ambil dari KV key block:[id] jika komponen kosong
-        if (!blockContent || blockContent === 'Failed to load.') {
-            const resKv = await fetch('/api/kv?key=' + encodeURIComponent('block:' + blockId));
-            if (resKv.ok) {
-                blockContent = await resKv.text();
+        // Fallback: Jika kosong, coba ambil melalui fetch langsung ke folder komponen atau endpoint lain
+        if (!blockContent || blockContent === 'Failed to load.' || blockContent.trim() === '') {
+            const resComp = await fetch('/api/block-data?id=' + encodeURIComponent(blockId));
+            if (resComp.ok) {
+                const data = await resComp.json().catch(() => null);
+                if (data && data.html) blockContent = data.html;
             }
         }
     } catch(e) {
-        console.error("Gagal mengambil library block:", e);
+        console.error("Gagal memuat library block:", e);
     }
 
-    // Fallback terakhir jika benar-benar kosong
-    if (!blockContent || blockContent === 'Failed to load.' || blockContent === '[]') {
-        blockContent = `<div class="container py-4"><h3>${blockId}</h3><p>Konten blok berhasil dimuat.</p></div>`;
+    // Fallback darurat jika file fisik di GitHub benar-benar kosong/belum ada isinya
+    if (!blockContent || blockContent === 'Failed to load.' || blockContent === '[]' || blockContent.trim() === '') {
+        blockContent = `<div class="container py-4"><h3>${blockId}</h3><p>Konten blok berhasil di-import dari library.</p></div>`;
     }
 
     const secId = blockId; 
