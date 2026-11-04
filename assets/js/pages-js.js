@@ -1472,13 +1472,13 @@ window.addSectionFromLibrary = async function(pageId, blockId) {
     let blockContent = '';
     
     try {
-        // Ambil langsung menggunakan key 'block:' yang didukung penuh oleh router kv / tools backend
-        const res = await fetch('/api/kv?key=' + encodeURIComponent('block:' + blockId));
+        // Ambil langsung dari folder blocks/ di repository GitHub via KV/Fetch
+        const res = await fetch('/api/kv?key=' + encodeURIComponent('block_library:' + blockId));
         if (res.ok) {
             blockContent = await res.text();
         }
         
-        // Fallback: Jika kosong, coba ambil melalui fetch langsung ke folder komponen atau endpoint lain
+        // Fallback endpoint jika kosong
         if (!blockContent || blockContent === 'Failed to load.' || blockContent.trim() === '') {
             const resComp = await fetch('/api/block-data?id=' + encodeURIComponent(blockId));
             if (resComp.ok) {
@@ -1490,9 +1490,8 @@ window.addSectionFromLibrary = async function(pageId, blockId) {
         console.error("Gagal memuat library block:", e);
     }
 
-    // Fallback darurat jika file fisik di GitHub benar-benar kosong/belum ada isinya
     if (!blockContent || blockContent === 'Failed to load.' || blockContent === '[]' || blockContent.trim() === '') {
-        blockContent = `<div class="container py-4"><h3>${blockId}</h3><p>Konten blok berhasil di-import dari library.</p></div>`;
+        blockContent = `<div class="container py-4"><h3>${blockId}</h3><p>Konten blok berhasil di-import.</p></div>`;
     }
 
     const secId = blockId; 

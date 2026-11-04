@@ -1,5 +1,10 @@
+/**
+ * assets/js/blocks-js.js
+ * Frontend JavaScript untuk Management Library Block CMS
+ */
+
 // ==========================================
-// TRANSLATIONS COLLECTION (Relevant only)
+// TRANSLATIONS COLLECTION
 // ==========================================
 const translations = {
     id: {
@@ -48,8 +53,10 @@ function changeLanguage(lang) {
 function showToast(message, type = 'success') {
     const toastEl = document.getElementById('liveToast');
     const toastBody = document.getElementById('toastMessage');
+    if (!toastEl || !toastBody) return;
     let iconClass = type === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-warning';
     if (type === 'info') iconClass = 'bi-info-circle-fill text-info';
+    if (type === 'danger') iconClass = 'bi-x-circle-fill text-danger';
     
     toastBody.innerHTML = `<i class="bi ${iconClass} me-2"></i> ${message}`;
     toastEl.className = `toast align-items-center text-white ${type === 'danger' ? 'bg-danger' : 'bg-dark'} border-0 shadow-lg`;
@@ -199,13 +206,13 @@ window.createNewBlock = async function() {
     }
     
     try {
-        await fetch('/api/kv', {
+        await fetch('/api/blocks/save-html', {
             method: 'POST',
             headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ key: 'block:' + bId, content: '<div class="container py-3"><h3>' + bId + '</h3></div>' })
+            body: JSON.stringify({ blockId: bId, html: '<div class="container py-4">\n    <h3>' + bId + '</h3>\n</div>' })
         });
         setButtonLoading(btn, false);
-        showToast("New block component successfully created and saved to GitHub!");
+        showToast("New block component successfully created in blocks/ folder on GitHub!");
         bootstrap.Modal.getInstance(document.getElementById('addBlockModal')).hide();
         loadBlocks();
     } catch(e) {
@@ -215,16 +222,24 @@ window.createNewBlock = async function() {
 };
 
 window.deleteBlock = async function(bId) {
-    if(!confirm("Are you sure you want to delete this block?")) return;
+    if(!confirm(`Are you sure you want to delete block "${bId}"?`)) return;
     const bulkModal = new bootstrap.Modal(document.getElementById('bulkProcessModal'));
     document.getElementById('bulkProcessTitle').innerText = "Deleting Block...";
     bulkModal.show();
     
     try {
-        await fetch('/api/kv', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key:'block:'+bId, content:''})});
+        const res = await fetch('/api/blocks/delete', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ blockId: bId })
+        });
         bulkModal.hide();
-        showToast("Block successfully deleted!");
-        loadBlocks();
+        if (res.ok) {
+            showToast("Block successfully deleted from blocks/ and repeater/ folders!");
+            loadBlocks();
+        } else {
+            showToast("Failed to delete block.", "danger");
+        }
     } catch(e) {
         bulkModal.hide();
         showToast("Failed to delete block.", "danger");
@@ -356,7 +371,7 @@ window.saveDynamicBlockData = async function() {
     const alertBox = document.getElementById('repeaterAlert');
     if(alertBox) {
         alertBox.className = "alert alert-info py-1 px-3 mb-0 small";
-        alertBox.innerText = "Saving data to GitHub...";
+        alertBox.innerText = "Saving data to repeater/ folder on GitHub...";
         alertBox.classList.remove('d-none');
     }
     
@@ -370,7 +385,7 @@ window.saveDynamicBlockData = async function() {
         if(res.ok) {
             if(alertBox) {
                 alertBox.className = "alert alert-success py-1 px-3 mb-0 small";
-                alertBox.innerText = "Repeater data successfully saved to GitHub!";
+                alertBox.innerText = "Repeater data successfully saved to repeater/ on GitHub!";
             }
             showToast("Repeater block data successfully saved to GitHub!");
             setTimeout(() => bootstrap.Modal.getInstance(document.getElementById('dynamicBlockModal')).hide(), 1000);
@@ -438,15 +453,25 @@ window.saveEditorDataDualStorage = async function() {
     const content = window.currentCodeMirrorInstance ? window.currentCodeMirrorInstance.getValue() : document.getElementById('htmlEditor').value;
     
     try {
-        const res = await fetch('/api/kv', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ key, content })
-        });
+        let res;
+        if (key.startsWith('block:')) {
+            const blockId = key.replace('block:', '');
+            res = await fetch('/api/blocks/save-html', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ blockId, html: content })
+            });
+        } else {
+            res = await fetch('/api/kv', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ key, content })
+            });
+        }
 
         if(res.ok){
             setButtonLoading(btn, false);
-            showToast("Block HTML successfully saved to GitHub!");
+            showToast("Block HTML successfully saved to blocks/ on GitHub!");
             setTimeout(() => {
                 closeCustomEditor();
                 loadBlocks();
