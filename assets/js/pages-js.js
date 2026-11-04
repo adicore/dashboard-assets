@@ -1381,16 +1381,25 @@ window.openSectionRepeaterModal = async function(pageId, secId, secName) {
 };
 
 async function saveSectionsToKv(pageId, sections) {
-    await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':sections', content: JSON.stringify(sections) }) });
-    const combinedHtml = sections.map(s => s.content).join('\n');
-    await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':content', content: clientSideMinify(combinedHtml) }) });
+    // Simpan daftar seksi ke KV/GitHub
+    await fetch('/api/kv', { 
+        method: 'POST', 
+        headers: {'Content-Type': 'application/json'}, 
+        body: JSON.stringify({ key: 'page:' + pageId + ':sections', content: JSON.stringify(sections) }) 
+    });
+
+    const combinedHtml = sections.map(s => s.content || '').join('\n');
+    await fetch('/api/kv', { 
+        method: 'POST', 
+        headers: {'Content-Type': 'application/json'}, 
+        body: JSON.stringify({ key: 'page:' + pageId + ':content', content: clientSideMinify(combinedHtml) }) 
+    });
     
     const pageTitleInput = document.getElementById('modalPageTitleInput-' + pageId);
     const pageTitle = pageTitleInput ? pageTitleInput.value : pageId;
     const pageFilenameInput = document.getElementById('modalPageSlugInput-' + pageId);
     const pageFilename = pageFilenameInput ? pageFilenameInput.value : `${pageId}.html`;
 
-    // Ambil mode editor yang sedang aktif saat ini agar tidak tertimpa/reset
     const selectedRadio = document.querySelector(`input[name="editorMode-${pageId}"]:checked`);
     const currentMode = selectedRadio ? selectedRadio.value : 'block_library';
 
@@ -1472,7 +1481,6 @@ window.addSectionFromLibrary = async function(pageId, blockId) {
     let blockContent = '';
     
     try {
-        // Ambil HTML blok dari folder blocks/ menggunakan key 'block:'
         const res = await fetch('/api/kv?key=' + encodeURIComponent('block:' + blockId));
         if (res.ok) {
             const txt = await res.text();
@@ -1480,13 +1488,10 @@ window.addSectionFromLibrary = async function(pageId, blockId) {
                 blockContent = txt;
             }
         }
-    } catch(e) {
-        console.error("Gagal memuat library block:", e);
-    }
+    } catch(e) {}
 
-    // Fallback darurat jika file HTML di GitHub belum terisi
     if (!blockContent || blockContent.trim() === '') {
-        blockContent = `<div class="container py-4"><h3>${blockId}</h3><p>Konten blok berhasil di-import.</p></div>`;
+        blockContent = `<div class="container py-4"><h3>${blockId}</h3><p>Konten block berhasil di-import.</p></div>`;
     }
 
     const secId = blockId; 
@@ -1509,7 +1514,7 @@ window.addSectionFromLibrary = async function(pageId, blockId) {
         const res = await fetch('/api/kv?key=page:' + pageId + ':sections'); 
         if (res.ok) { 
             const txt = await res.text(); 
-            if (txt) sections = JSON.parse(txt); 
+            if (txt && txt !== 'Failed to load.') sections = JSON.parse(txt); 
         } 
     } catch(e) {}
 
