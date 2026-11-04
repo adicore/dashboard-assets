@@ -1,3 +1,9 @@
+/**
+ * assets/js/pages-js.js
+ * Frontend JavaScript untuk Editor Halaman Statis & Manajemen CMS
+ * Dilengkapi Client-Side Minify/Unminify & Integrasi Repository GitHub
+ */
+
 // ==========================================
 // 1. GLOBAL UTILITIES & TRANSLATIONS
 // ==========================================
@@ -55,6 +61,7 @@ function changeLanguage(lang) {
 function showToast(message, type = 'success') {
     const toastEl = document.getElementById('liveToast');
     const toastBody = document.getElementById('toastMessage');
+    if (!toastEl || !toastBody) return;
     let iconClass = type === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-warning';
     if (type === 'danger') iconClass = 'bi-x-circle-fill text-danger';
     
@@ -83,15 +90,52 @@ async function setButtonLoading(btn, isLoading, loadingText = 'Saving...') {
     }
 }
 
+// CLIENT-SIDE MINIFY: Ukuran kecil saat disimpan ke repository GitHub
 function clientSideMinify(html) {
     if (!html) return "";
     return html
         .replace(/<!--[\s\S]*?-->/gis, (match) => {
-            return (match.includes('LOOP') || match.includes('IF_HAS_CHILDREN') || match.includes('END_IF')) ? match : '';
+            return (match.includes('LOOP') || match.includes('IF_HAS_CHILDREN') || match.includes('END_IF') || match.includes('META_INJECT') || match.includes('POST_DATA')) ? match : '';
         })
         .replace(/\s+/g, ' ')
         .replace(/>\s+</g, '><')
         .trim();
+}
+
+// CLIENT-SIDE UNMINIFY: Merapikan HTML kembali agar readable / raw saat dibuka di editor dashboard
+function clientSideUnminify(htmlContent) {
+    if (!htmlContent || typeof htmlContent !== 'string') return "";
+    let formatted = '';
+    let indent = '';
+    let indentTab = '    '; 
+    
+    htmlContent = htmlContent.replace(/>\s+</g, '>\n<');
+    let lines = htmlContent.split('\n');
+    
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i].trim();
+        if (!line) continue;
+
+        if (line.match(/^<\/\w/)) {
+            if (indent.length >= indentTab.length) {
+                indent = indent.substring(indentTab.length);
+            }
+        }
+
+        formatted += indent + line + '\n';
+
+        if (line.match(/^<([a-zA-Z0-9\-]+)(?![\/:])(?:.|\s)*?>$/)) {
+            let matchTag = line.match(/^<([^\s>]+)/);
+            if (matchTag) {
+                let tagName = matchTag[1].toLowerCase();
+                const voidElements = ['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr'];
+                if (!voidElements.includes(tagName) && !line.endsWith('/>')) {
+                    indent += indentTab;
+                }
+            }
+        }
+    }
+    return formatted.trim();
 }
 
 function generateUniqueFilename(title, existingPages, currentEditId) {
@@ -771,7 +815,7 @@ window.openPageManager = async function(pageId, pageName, fileName, forcedMode =
     document.getElementById('pageModalFooterInfo').innerHTML = `File URL: <code class="text-primary font-monospace">${fileName}</code>`;
 
     const container = document.getElementById('pageEditorModalBodyContent');
-    container.innerHTML = '<div class="text-center py-5 text-muted fst-italic">Loading page data from D1 Database...</div>';
+    container.innerHTML = '<div class="text-center py-5 text-muted fst-italic">Loading page data from D1 & GitHub...</div>';
     
     const modalEl = document.getElementById('pageEditorModal');
     const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
@@ -794,14 +838,19 @@ window.openPageManager = async function(pageId, pageName, fileName, forcedMode =
     let currentEditorMode = forcedMode || pageDetail.mode || 'tinymce';
     let pageContentForTinyMce = pageDetail.content || '';
 
+    // Ambil konten raw dari GitHub/KV jika kosong, lalu lakukan Unminify agar readable di dashboard
     if (!pageContentForTinyMce && currentEditorMode === 'tinymce') {
         try {
-            const resContent = await fetch('/api/kv?key=page:' + pageId + ':raw');
+            const resContent = await fetch('/api/kv?key=page:' + pageId + ':content');
             if (resContent.ok) {
                 const txt = await resContent.text();
-                if (txt && txt !== 'Failed to load.') pageContentForTinyMce = txt;
+                if (txt && txt !== 'Failed to load.') {
+                    pageContentForTinyMce = clientSideUnminify(txt);
+                }
             }
         } catch(e){}
+    } else if (pageContentForTinyMce) {
+        pageContentForTinyMce = clientSideUnminify(pageContentForTinyMce);
     }
 
     let seoData = { title: pageName, description: '', ogImage: '', noIndex: false, noFollow: false };
@@ -1021,6 +1070,9 @@ window.saveStaticPageUnified = async function(targetStatus = 'draft') {
             if (el) rawContent = el.value;
         }
 
+        // Lakukan MINIFY di sisi klien sebelum dikirim ke server/repo GitHub
+        const minifiedContent = clientSideMinify(rawContent);
+
         const selectedRadio = document.querySelector(`input[name="editorMode-${oldPageId}"]:checked`);
         const selectedMode = selectedRadio ? selectedRadio.value : 'tinymce';
 
@@ -1038,7 +1090,7 @@ window.saveStaticPageUnified = async function(targetStatus = 'draft') {
             body: JSON.stringify({ 
                 filename: filename, 
                 pageId: newPageId, 
-                content: rawContent,
+                content: minifiedContent,
                 mode: selectedMode,
                 name: title,
                 seoData: seoData,
@@ -1056,7 +1108,7 @@ window.saveStaticPageUnified = async function(targetStatus = 'draft') {
                 filename: filename, 
                 status: currentStatus,
                 mode: selectedMode,
-                content: rawContent,
+                content: minifiedContent,
                 seo: seoData,
                 css: window._currentPageCss || '',
                 js: window._currentPageJs || ''
@@ -1110,7 +1162,7 @@ window.saveEditorMode = async function(pageId, evt) {
                 name: document.getElementById('modalPageTitleInput-' + pageId)?.value || pageId,
                 filename: document.getElementById('modalPageSlugInput-' + pageId)?.value || `${pageId}.html`,
                 mode: selected,
-                content: rawContent
+                content: clientSideMinify(rawContent)
             }) 
         });
 
@@ -1338,7 +1390,6 @@ async function saveSectionsToKv(pageId, sections) {
     });
 }
 
-// FIX: Pastikan Block Library memuat item dari endpoint kv-blocks.js
 window.openAddSectionModal = async function(pageId) {
     const existingModal = document.getElementById('addSectionModal');
     if (existingModal) existingModal.remove();
@@ -1366,7 +1417,6 @@ window.openAddSectionModal = async function(pageId) {
         listContainer.innerHTML = '';
         if (!window.availableBlocksList || window.availableBlocksList.length === 0) {
             try {
-                // Endpoint ini mengarah ke file src/api/kv-blocks.js
                 const blockRes = await fetch('/api/blocks/list');
                 if (blockRes.ok) window.availableBlocksList = await blockRes.json();
             } catch (e) { window.availableBlocksList = []; }
@@ -1400,7 +1450,6 @@ window.createBlankSectionItem = async function(pageId) {
     showToast("New section successfully added!");
 };
 
-// FIX: Pastikan Block di-fetch dengan key 'block:[id]' dari KV tanpa suffix saat dipanggil
 window.addSectionFromLibrary = async function(pageId, blockId) {
     let blockContent = '';
     
@@ -1653,6 +1702,11 @@ window.openEditor = async function(key, title) {
                 if (res.ok) content = await res.text();
             }
         } catch(e) {}
+    }
+    
+    // Lakukan unminify klien agar readable saat diedit di codemirror
+    if (mode === 'htmlmixed' && content && content !== "Failed to load.") {
+        content = clientSideUnminify(content);
     }
     
     ed.value = content;
