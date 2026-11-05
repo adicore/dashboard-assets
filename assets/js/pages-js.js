@@ -1,7 +1,7 @@
 /**
  * assets/js/pages-js.js
  * Frontend JavaScript untuk Editor Halaman Statis & Manajemen CMS
- * Dilengkapi Client-Side Minify/Unminify, Perbaikan Library Block, & Persistensi Mode Editor
+ * Dilengkapi Client-Side Minify/Unminify, Optimistic UI Rendering for Block Library, & Persistensi Mode Editor
  */
 
 // ==========================================
@@ -972,6 +972,7 @@ window.openPageManager = async function(pageId, pageName, fileName, forcedMode =
 
     setupOgImageUploads();
     if (currentEditorMode === 'block_library') {
+        window['currentSections_' + pageId] = null; // Flush stale local cache on modal load
         loadPageSectionsUI(pageId);
     } else if (currentEditorMode === 'tinymce') {
         setTimeout(() => {
@@ -1187,51 +1188,85 @@ window.saveEditorMode = async function(pageId, evt) {
     }
 };
 
-async function loadPageSectionsUI(pageId) {
+// -------------------------------------------------------------
+// SECTIONS & BLOCKS MANAGEMENT (OPTIMISTIC UI & LOCAL CACHE FIX)
+// -------------------------------------------------------------
+
+window.renderSectionsHtml = function(pageId, sections) {
     const container = document.getElementById(`sectionsListContainer-${pageId}`);
     if (!container) return;
+    container.innerHTML = '';
+    
+    if (!sections || !Array.isArray(sections) || !sections.length) {
+        container.innerHTML = '<div class="text-center py-4 text-muted small fst-italic">No sections added yet. Click "+ Add Section" above to start building.</div>';
+        return;
+    }
+
+    sections.forEach((sec, idx) => {
+        const isLibraryBlock = window.availableBlocksList && window.availableBlocksList.includes(sec.id);
+        const editKey = isLibraryBlock ? 'block:' + sec.id : 'page:' + pageId + ':section:' + sec.id;
+        const secName = sec.name || sec.id;
+        const safeName = secName.replace(/'/g, "\\'");
+
+        container.innerHTML += `
+        <div class="border p-3 rounded-3 bg-white shadow-sm d-flex justify-content-between align-items-center mb-3" data-sec-id="${sec.id}">
+            <div>
+                <h6 class="fw-bold text-dark mb-1"><i class="bi bi-puzzle text-primary me-2"></i>${secName}</h6>
+                <code class="text-muted small font-monospace">ID: ${sec.id} ${isLibraryBlock ? '<span class="badge bg-success ms-1">Library Block</span>' : ''}</code>
+            </div>
+            <div class="d-flex gap-2 align-items-center">
+                <div class="btn-group btn-group-sm me-1">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="movePageSection('${pageId}', ${idx}, -1)" ${idx === 0 ? 'disabled' : ''} title="Move Up"><i class="bi bi-arrow-up"></i></button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="movePageSection('${pageId}', ${idx}, 1)" ${idx === sections.length - 1 ? 'disabled' : ''} title="Move Down"><i class="bi bi-arrow-down"></i></button>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-primary px-2 py-1" onclick="openSectionRepeaterModal('${pageId}', '${sec.id}', '${safeName}')" title="Edit Data Repeater / Items"><i class="bi bi-list-nested me-1"></i> Data Repeater</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary px-2 py-1" onclick="openEditor('${editKey}', '${safeName}')" title="Edit HTML"><i class="bi bi-code-slash"></i> Edit HTML</button>
+                <button type="button" class="btn btn-sm btn-outline-danger px-2 py-1" onclick="deletePageSection('${pageId}', '${sec.id}')" title="Delete Section"><i class="bi bi-trash"></i></button>
+            </div>
+        </div>`;
+    });
+};
+
+window.loadPageSectionsUI = async function(pageId) {
+    const container = document.getElementById(`sectionsListContainer-${pageId}`);
+    if (!container) return;
+
+    if (window['currentSections_' + pageId] && Array.isArray(window['currentSections_' + pageId]) && window['currentSections_' + pageId].length > 0) {
+        renderSectionsHtml(pageId, window['currentSections_' + pageId]);
+        return;
+    }
 
     let sections = [];
     try {
         const res = await fetch('/api/kv?key=page:' + pageId + ':sections');
         if (res.ok) {
             const txt = await res.text();
-            if (txt) sections = JSON.parse(txt);
+            if (txt && txt !== 'Failed to load.' && txt.trim() !== '') {
+                sections = JSON.parse(txt);
+            }
         }
     } catch(e) {}
 
-    if (!sections.length) {
-        sections = []; 
-        await saveSectionsToKv(pageId, sections);
-    }
+    window['currentSections_' + pageId] = sections;
     renderSectionsHtml(pageId, sections);
-}
+};
 
-function renderSectionsHtml(pageId, sections) {
-    const container = document.getElementById(`sectionsListContainer-${pageId}`);
-    if (!container) return;
-    container.innerHTML = '';
-    
-    if (!sections.length) {
-        container.innerHTML = '<div class="text-center py-4 text-muted small fst-italic">No sections added yet. Click "+ Add Section" above to start building.</div>';
-        return;
-    }
+window.movePageSection = async function(pageId, index, direction) {
+    let sections = window['currentSections_' + pageId] || [];
+    if (!sections.length) return;
 
-    sections.forEach((sec) => {
-        const isLibraryBlock = window.availableBlocksList && window.availableBlocksList.includes(sec.id);
-        const editKey = isLibraryBlock ? 'block:' + sec.id : 'page:' + pageId + ':section:' + sec.id;
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= sections.length) return;
 
-        container.innerHTML += `
-        <div class="border p-3 rounded-3 bg-white shadow-sm d-flex justify-content-between align-items-center">
-            <div><h6 class="fw-bold text-dark mb-1">${sec.name}</h6><code class="text-muted small font-monospace">ID: ${sec.id} ${isLibraryBlock ? '<span class="badge bg-success ms-1">Library Block</span>' : ''}</code></div>
-            <div class="d-flex gap-2">
-                <button class="btn btn-sm btn-outline-primary px-2 py-1" onclick="openSectionRepeaterModal('${pageId}', '${sec.id}', '${sec.name}')" title="Edit Data Repeater / Items"><i class="bi bi-list-nested me-1"></i> Data Repeater</button>
-                <button class="btn btn-sm btn-outline-secondary px-2 py-1" onclick="openEditor('${editKey}', '${sec.name}')" title="Edit HTML"><i class="bi bi-code-slash"></i> Edit HTML</button>
-                <button class="btn btn-sm btn-outline-danger px-2 py-1" onclick="deletePageSection('${pageId}', '${sec.id}')" title="Delete Section"><i class="bi bi-trash"></i></button>
-            </div>
-        </div>`;
-    });
-}
+    const targetItem = sections.splice(index, 1)[0];
+    sections.splice(newIndex, 0, targetItem);
+
+    window['currentSections_' + pageId] = sections;
+    renderSectionsHtml(pageId, sections);
+
+    await saveSectionsToKv(pageId, sections);
+    showToast("Section order updated!");
+};
 
 window.openSectionRepeaterModal = async function(pageId, secId, secName) {
     let modalEl = document.getElementById('sectionRepeaterModal');
@@ -1359,11 +1394,16 @@ window.openSectionRepeaterModal = async function(pageId, secId, secName) {
             await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':section:' + secId + ':raw', content: generatedHtml }) });
             await fetch('/api/kv', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key: 'page:' + pageId + ':section:' + secId, content: clientSideMinify(generatedHtml) }) });
 
-            let sections = [];
-            const resSec = await fetch('/api/kv?key=page:' + pageId + ':sections');
-            if (resSec.ok) sections = JSON.parse(await resSec.text());
+            let sections = window['currentSections_' + pageId] || [];
+            if (!sections.length) {
+                const resSec = await fetch('/api/kv?key=page:' + pageId + ':sections');
+                if (resSec.ok) sections = JSON.parse(await resSec.text());
+            }
             
             sections = sections.map(s => s.id === secId ? { ...s, content: generatedHtml } : s);
+            window['currentSections_' + pageId] = sections;
+            renderSectionsHtml(pageId, sections);
+
             await saveSectionsToKv(pageId, sections);
 
             bootstrap.Modal.getInstance(document.getElementById('sectionRepeaterModal')).hide();
@@ -1371,8 +1411,6 @@ window.openSectionRepeaterModal = async function(pageId, secId, secName) {
             
             document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
             localStorage.setItem('sync_pending', 'true');
-            
-            loadPageSectionsUI(pageId);
         } catch(e) { showToast("Failed to save repeater data.", "danger"); }
     });
 
@@ -1381,7 +1419,6 @@ window.openSectionRepeaterModal = async function(pageId, secId, secName) {
 };
 
 async function saveSectionsToKv(pageId, sections) {
-    // Simpan daftar seksi ke KV/GitHub
     await fetch('/api/kv', { 
         method: 'POST', 
         headers: {'Content-Type': 'application/json'}, 
@@ -1463,12 +1500,22 @@ window.createBlankSectionItem = async function(pageId) {
     const name = prompt("Enter new section name:", "Custom Section");
     if (!name) return;
     const secId = 'sec_' + Date.now();
-    let sections = [];
-    try { const res = await fetch('/api/kv?key=page:' + pageId + ':sections'); if (res.ok) sections = JSON.parse(await res.text()); } catch(e) {}
+    let sections = window['currentSections_' + pageId] || [];
+    if (!sections.length) {
+        try { const res = await fetch('/api/kv?key=page:' + pageId + ':sections'); if (res.ok) sections = JSON.parse(await res.text()); } catch(e) {}
+    }
     sections.push({ id: secId, name: name, content: `<div><h3>${name}</h3><p>Section content...</p></div>` });
+
+    window['currentSections_' + pageId] = sections;
+    renderSectionsHtml(pageId, sections);
+
+    const modalEl = document.getElementById('addSectionModal');
+    if (modalEl) { 
+        const bsModal = bootstrap.Modal.getInstance(modalEl); 
+        if (bsModal) bsModal.hide(); 
+    }
+
     await saveSectionsToKv(pageId, sections);
-    bootstrap.Modal.getInstance(document.getElementById('addSectionModal')).hide();
-    loadPageSectionsUI(pageId);
     
     document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
     localStorage.setItem('sync_pending', 'true');
@@ -1476,7 +1523,6 @@ window.createBlankSectionItem = async function(pageId) {
     showToast("New section successfully added!");
 };
 
-// DIPERBAIKI: Mengambil library block langsung dari endpoint /api/block-data atau komponen GitHub
 window.addSectionFromLibrary = async function(pageId, blockId) {
     let blockContent = '';
     
@@ -1497,26 +1543,28 @@ window.addSectionFromLibrary = async function(pageId, blockId) {
     const secId = blockId; 
     
     try {
-        await fetch('/api/kv', { 
+        fetch('/api/kv', { 
             method: 'POST', 
             headers: {'Content-Type': 'application/json'}, 
             body: JSON.stringify({ key: 'page:' + pageId + ':section:' + secId + ':raw', content: blockContent }) 
         });
-        await fetch('/api/kv', { 
+        fetch('/api/kv', { 
             method: 'POST', 
             headers: {'Content-Type': 'application/json'}, 
             body: JSON.stringify({ key: 'page:' + pageId + ':section:' + secId, content: clientSideMinify(blockContent) }) 
         });
     } catch(e) {}
 
-    let sections = [];
-    try { 
-        const res = await fetch('/api/kv?key=page:' + pageId + ':sections'); 
-        if (res.ok) { 
-            const txt = await res.text(); 
-            if (txt && txt !== 'Failed to load.') sections = JSON.parse(txt); 
-        } 
-    } catch(e) {}
+    let sections = window['currentSections_' + pageId] || [];
+    if (!sections.length) {
+        try { 
+            const res = await fetch('/api/kv?key=page:' + pageId + ':sections'); 
+            if (res.ok) { 
+                const txt = await res.text(); 
+                if (txt && txt !== 'Failed to load.' && txt.trim() !== '') sections = JSON.parse(txt); 
+            } 
+        } catch(e) {}
+    }
 
     const existingIndex = sections.findIndex(s => s.id === secId);
     if (existingIndex >= 0) {
@@ -1525,15 +1573,16 @@ window.addSectionFromLibrary = async function(pageId, blockId) {
         sections.push({ id: secId, name: blockId, content: blockContent });
     }
 
-    await saveSectionsToKv(pageId, sections);
-    
+    window['currentSections_' + pageId] = sections;
+    renderSectionsHtml(pageId, sections);
+
     const modalEl = document.getElementById('addSectionModal');
     if (modalEl) { 
         const bsModal = bootstrap.Modal.getInstance(modalEl); 
         if (bsModal) bsModal.hide(); 
     }
     
-    loadPageSectionsUI(pageId);
+    await saveSectionsToKv(pageId, sections);
     
     document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
     localStorage.setItem('sync_pending', 'true');
@@ -1543,11 +1592,16 @@ window.addSectionFromLibrary = async function(pageId, blockId) {
 
 window.deletePageSection = async function(pageId, secId) {
     if (!confirm("Delete this section from the page?")) return;
-    let sections = [];
-    try { const res = await fetch('/api/kv?key=page:' + pageId + ':sections'); if (res.ok) sections = JSON.parse(await res.text()); } catch(e) {}
+    let sections = window['currentSections_' + pageId] || [];
+    if (!sections.length) {
+        try { const res = await fetch('/api/kv?key=page:' + pageId + ':sections'); if (res.ok) sections = JSON.parse(await res.text()); } catch(e) {}
+    }
     sections = sections.filter(s => s.id !== secId);
+    
+    window['currentSections_' + pageId] = sections;
+    renderSectionsHtml(pageId, sections);
+
     await saveSectionsToKv(pageId, sections);
-    loadPageSectionsUI(pageId);
     
     document.querySelectorAll('.sync-pending-indicator, #syncPendingDot, [data-sync-indicator]').forEach(el => el.classList.remove('d-none'));
     localStorage.setItem('sync_pending', 'true');
@@ -1788,32 +1842,36 @@ window.saveEditorDataDualStorage = async function() {
             const pageId = parts[1];
             const secId = parts[3];
             try {
-                const resSec = await fetch('/api/kv?key=page:' + pageId + ':sections');
-                if (resSec.ok) {
-                    let sections = JSON.parse(await resSec.text());
-                    sections = sections.map(s => s.id === secId ? { ...s, content: rawContent } : s);
-                    await saveSectionsToKv(pageId, sections);
+                let sections = window['currentSections_' + pageId] || [];
+                if (!sections.length) {
+                    const resSec = await fetch('/api/kv?key=page:' + pageId + ':sections');
+                    if (resSec.ok) sections = JSON.parse(await resSec.text());
                 }
+                sections = sections.map(s => s.id === secId ? { ...s, content: rawContent } : s);
+                window['currentSections_' + pageId] = sections;
+                await saveSectionsToKv(pageId, sections);
             } catch(e) {}
         }
 
         if (key.startsWith('block:') && window.currentPageId) {
             const blockId = key.split(':')[1];
             try {
-                const resSec = await fetch('/api/kv?key=page:' + window.currentPageId + ':sections');
-                if (resSec.ok) {
-                    let sections = JSON.parse(await resSec.text());
-                    let updated = false;
-                    sections = sections.map(s => {
-                        if (s.id === blockId) {
-                            updated = true;
-                            return { ...s, content: rawContent };
-                        }
-                        return s;
-                    });
-                    if (updated) {
-                        await saveSectionsToKv(window.currentPageId, sections);
+                let sections = window['currentSections_' + window.currentPageId] || [];
+                if (!sections.length) {
+                    const resSec = await fetch('/api/kv?key=page:' + window.currentPageId + ':sections');
+                    if (resSec.ok) sections = JSON.parse(await resSec.text());
+                }
+                let updated = false;
+                sections = sections.map(s => {
+                    if (s.id === blockId) {
+                        updated = true;
+                        return { ...s, content: rawContent };
                     }
+                    return s;
+                });
+                if (updated) {
+                    window['currentSections_' + window.currentPageId] = sections;
+                    await saveSectionsToKv(window.currentPageId, sections);
                 }
             } catch(e) {}
         }
