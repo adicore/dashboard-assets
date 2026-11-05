@@ -2,6 +2,7 @@
  * assets/js/blocks-js.js
  * Frontend JavaScript untuk Management Library Block CMS
  * Dilengkapi Client-Side Minify & Unminify Otomatis untuk File HTML Block
+ * serta Dukungan Repeater Data & Search/Filter Real-Time
  */
 
 // ==========================================
@@ -173,7 +174,7 @@ window.loadBlocks = async function() {
     const container = document.getElementById('blocksContainer');
     if (!container) return;
 
-    container.innerHTML = '<div class="col-12 text-center py-4 text-muted fst-italic">Loading block list...</div>';
+    container.innerHTML = '<div class="col-12 text-center py-4 text-muted fst-italic"><span class="spinner-border spinner-border-sm me-2"></span>Loading block list...</div>';
 
     try {
         const res = await fetch('/api/blocks/list');
@@ -187,8 +188,15 @@ window.loadBlocks = async function() {
 
         let finalHtml = `
 <div class="col-12">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="input-group input-group-sm" style="max-width: 320px;">
+            <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+            <input type="text" id="searchBlockInput" class="form-control border-start-0" placeholder="Filter blocks..." onkeyup="filterBlocksList()">
+        </div>
+        <span class="badge bg-secondary">${blocks.length} Blocks Available</span>
+    </div>
     <div class="table-responsive bg-white rounded shadow-sm border border-light">
-        <table class="table table-hover align-middle mb-0">
+        <table class="table table-hover align-middle mb-0" id="blocksTable">
             <thead class="table-light">
                 <tr>
                     <th scope="col" class="py-3 px-4">Block Name</th>
@@ -201,11 +209,11 @@ window.loadBlocks = async function() {
 
         blocks.forEach(bId => {
             finalHtml += `
-                <tr>
+                <tr class="block-row-item" data-block-id="${bId}">
                     <td class="px-4 py-3">
                         <div class="d-flex align-items-center">
                             <i class="bi bi-puzzle text-success me-3 fs-5"></i>
-                            <h6 class="mb-0 fw-bold text-dark">${bId}</h6>
+                            <h6 class="mb-0 fw-bold text-dark block-name">${bId}</h6>
                         </div>
                     </td>
                     <td class="py-3">
@@ -216,10 +224,10 @@ window.loadBlocks = async function() {
                     <td class="text-end px-4 py-3">
                         <div class="btn-group" role="group">
                             <button class="btn btn-sm btn-outline-primary" onclick="openEditor('block:${bId}', 'Block: ${bId}')" title="Edit HTML">
-                                <i class="bi bi-code-slash"></i>
+                                <i class="bi bi-code-slash me-1"></i> HTML
                             </button>
                             <button class="btn btn-sm btn-outline-info" onclick="openDynamicBlockModal('${bId}')" title="Edit Repeater">
-                                <i class="bi bi-list-nested"></i>
+                                <i class="bi bi-list-nested me-1"></i> Repeater
                             </button>
                             <button class="btn btn-sm btn-outline-secondary" onclick="renameBlock('${bId}')" title="Rename">
                                 <i class="bi bi-pencil-square"></i>
@@ -245,10 +253,24 @@ window.loadBlocks = async function() {
     }
 };
 
+window.filterBlocksList = function() {
+    const q = (document.getElementById('searchBlockInput')?.value || '').toLowerCase();
+    const rows = document.querySelectorAll('.block-row-item');
+    rows.forEach(row => {
+        const bId = row.getAttribute('data-block-id') || '';
+        if (bId.toLowerCase().includes(q)) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+};
+
 window.createNewBlock = async function() {
     const btn = document.getElementById('btnSaveNewBlock');
     setButtonLoading(btn, true, "Creating Block...");
-    const bId = document.getElementById('inpNewBlockId').value.trim().toLowerCase().replace(/[^a-z0-9-]/g,'-');
+    const inpEl = document.getElementById('inpNewBlockId');
+    const bId = inpEl ? inpEl.value.trim().toLowerCase().replace(/[^a-z0-9-]/g,'-') : '';
     
     if(!bId) {
         setButtonLoading(btn, false);
@@ -258,15 +280,24 @@ window.createNewBlock = async function() {
     const initialHtml = clientSideMinify(`<div class="container py-4">\n    <h3>${bId}</h3>\n</div>`);
 
     try {
-        await fetch('/api/blocks/save-html', {
+        const res = await fetch('/api/blocks/save-html', {
             method: 'POST',
             headers: {'Content-Type':'application/json'},
             body: JSON.stringify({ blockId: bId, html: initialHtml })
         });
         setButtonLoading(btn, false);
-        showToast("New block component successfully created in blocks/ folder on GitHub!");
-        bootstrap.Modal.getInstance(document.getElementById('addBlockModal')).hide();
-        loadBlocks();
+        if (res.ok) {
+            showToast("New block component successfully created in blocks/ folder on GitHub!");
+            const modalEl = document.getElementById('addBlockModal');
+            if (modalEl) {
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                if (modal) modal.hide();
+            }
+            if (inpEl) inpEl.value = '';
+            loadBlocks();
+        } else {
+            showToast("Failed to create new block.", "danger");
+        }
     } catch(e) {
         setButtonLoading(btn, false);
         showToast("Failed to create new block.", "danger");
@@ -275,9 +306,14 @@ window.createNewBlock = async function() {
 
 window.deleteBlock = async function(bId) {
     if(!confirm(`Are you sure you want to delete block "${bId}"?`)) return;
-    const bulkModal = new bootstrap.Modal(document.getElementById('bulkProcessModal'));
-    document.getElementById('bulkProcessTitle').innerText = "Deleting Block...";
-    bulkModal.show();
+    const bulkModalEl = document.getElementById('bulkProcessModal');
+    let bulkModal = null;
+    if (bulkModalEl) {
+        bulkModal = new bootstrap.Modal(bulkModalEl);
+        const titleEl = document.getElementById('bulkProcessTitle');
+        if (titleEl) titleEl.innerText = "Deleting Block...";
+        bulkModal.show();
+    }
     
     try {
         const res = await fetch('/api/blocks/delete', {
@@ -285,7 +321,7 @@ window.deleteBlock = async function(bId) {
             headers: {'Content-Type':'application/json'},
             body: JSON.stringify({ blockId: bId })
         });
-        bulkModal.hide();
+        if (bulkModal) bulkModal.hide();
         if (res.ok) {
             showToast("Block successfully deleted from blocks/ and blocks/repeater/ folders!");
             loadBlocks();
@@ -293,7 +329,7 @@ window.deleteBlock = async function(bId) {
             showToast("Failed to delete block.", "danger");
         }
     } catch(e) {
-        bulkModal.hide();
+        if (bulkModal) bulkModal.hide();
         showToast("Failed to delete block.", "danger");
     }
 };
@@ -305,9 +341,14 @@ window.renameBlock = async function(oldId) {
     const cleanNewId = newId.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
     if (!cleanNewId) return showToast("Invalid block ID!", "warning");
 
-    const bulkModal = new bootstrap.Modal(document.getElementById('bulkProcessModal'));
-    document.getElementById('bulkProcessTitle').innerText = "Renaming Block...";
-    bulkModal.show();
+    const bulkModalEl = document.getElementById('bulkProcessModal');
+    let bulkModal = null;
+    if (bulkModalEl) {
+        bulkModal = new bootstrap.Modal(bulkModalEl);
+        const titleEl = document.getElementById('bulkProcessTitle');
+        if (titleEl) titleEl.innerText = "Renaming Block...";
+        bulkModal.show();
+    }
 
     try {
         const res = await fetch('/api/blocks/rename', {
@@ -315,7 +356,7 @@ window.renameBlock = async function(oldId) {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ oldId, newId: cleanNewId })
         });
-        bulkModal.hide();
+        if (bulkModal) bulkModal.hide();
         
         if (res.ok) {
             showToast("Block name successfully changed on GitHub!");
@@ -324,7 +365,7 @@ window.renameBlock = async function(oldId) {
             showToast("Failed to change block name.", "danger");
         }
     } catch(e) {
-        bulkModal.hide();
+        if (bulkModal) bulkModal.hide();
         showToast("A network error occurred.", "danger");
     }
 };
@@ -333,16 +374,19 @@ window.renameBlock = async function(oldId) {
 // DYNAMIC BLOCK REPEATER DATA
 // ==========================================
 window.openDynamicBlockModal = async function(blockId) {
-    document.getElementById('currentDynamicBlockId').value = blockId;
-    document.getElementById('dynamicBlockModalTitle').innerHTML = `<i class="bi bi-list-nested me-2 text-success"></i>Edit Repeater Data: ${blockId}`;
+    const blockIdEl = document.getElementById('currentDynamicBlockId');
+    if (blockIdEl) blockIdEl.value = blockId;
+    const titleEl = document.getElementById('dynamicBlockModalTitle');
+    if (titleEl) titleEl.innerHTML = `<i class="bi bi-list-nested me-2 text-success"></i>Edit Repeater Data: ${blockId}`;
     
     const container = document.getElementById('repeaterRowsContainer');
-    if (container) container.innerHTML = '<div class="text-muted small fst-italic">Loading data...</div>';
+    if (container) container.innerHTML = '<div class="text-muted small fst-italic p-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading repeater data...</div>';
     
     const alertBox = document.getElementById('repeaterAlert');
     if (alertBox) alertBox.classList.add('d-none');
     
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('dynamicBlockModal')).show();
+    const modalEl = document.getElementById('dynamicBlockModal');
+    if (modalEl) bootstrap.Modal.getOrCreateInstance(modalEl).show();
 
     try {
         const res = await fetch('/api/block-data?id=' + encodeURIComponent(blockId));
@@ -363,15 +407,15 @@ window.renderRepeaterRows = function(items) {
     container.innerHTML = "";
     
     if(!items || items.length === 0){
-        container.innerHTML='<div class="text-muted small fst-italic p-3 bg-white border rounded">No repeater items yet.</div>';
+        container.innerHTML = '<div class="text-muted small fst-italic p-3 bg-white border rounded">No repeater items yet. Click "Add New Item Row" to create one.</div>';
         return;
     }
     
     items.forEach((item, index) => {
         container.innerHTML += `
-        <div class="repeater-row wp-card p-3 bg-white border position-relative mb-3 rounded">
+        <div class="repeater-row wp-card p-3 bg-white border position-relative mb-3 rounded shadow-sm">
             <button type="button" class="btn-close position-absolute top-0 end-0 m-3" onclick="this.closest('.repeater-row').remove()"></button>
-            <h6 class="fw-bold text-secondary small mb-3">Item #${index+1}</h6>
+            <h6 class="fw-bold text-secondary small mb-3"><i class="bi bi-layers me-1 text-primary"></i> Item #${index+1}</h6>
             <div class="row g-3">
                 <div class="col-md-3"><label class="form-label small fw-semibold">Title</label><input type="text" class="form-control form-control-sm r-title" value="${item.title || ''}"></div>
                 <div class="col-md-3"><label class="form-label small fw-semibold">Subtitle</label><input type="text" class="form-control form-control-sm r-subtitle" value="${item.subtitle || ''}"></div>
@@ -389,10 +433,11 @@ window.addRepeaterRow = function() {
     if (!container) return;
     if(container.querySelector('.text-muted')) container.innerHTML = "";
     
+    const count = container.querySelectorAll('.repeater-row').length + 1;
     container.insertAdjacentHTML('beforeend', `
-    <div class="repeater-row wp-card p-3 bg-white border position-relative mb-3 rounded">
+    <div class="repeater-row wp-card p-3 bg-white border position-relative mb-3 rounded shadow-sm">
         <button type="button" class="btn-close position-absolute top-0 end-0 m-3" onclick="this.closest('.repeater-row').remove()"></button>
-        <h6 class="fw-bold text-secondary small mb-3">New Item</h6>
+        <h6 class="fw-bold text-secondary small mb-3"><i class="bi bi-layers me-1 text-primary"></i> Item #${count}</h6>
         <div class="row g-3">
             <div class="col-md-3"><label class="form-label small fw-semibold">Title</label><input type="text" class="form-control form-control-sm r-title"></div>
             <div class="col-md-3"><label class="form-label small fw-semibold">Subtitle</label><input type="text" class="form-control form-control-sm r-subtitle"></div>
@@ -405,18 +450,26 @@ window.addRepeaterRow = function() {
 };
 
 window.saveDynamicBlockData = async function() {
-    const blockId = document.getElementById('currentDynamicBlockId').value;
+    const blockIdEl = document.getElementById('currentDynamicBlockId');
+    const blockId = blockIdEl ? blockIdEl.value : '';
     const rows = document.querySelectorAll('.repeater-row'); 
     let items = [];
     
     rows.forEach(row => {
+        const titleInp = row.querySelector('.r-title');
+        const subInp = row.querySelector('.r-subtitle');
+        const urlInp = row.querySelector('.r-url');
+        const colInp = row.querySelector('.r-color');
+        const imgInp = row.querySelector('.r-image');
+        const descInp = row.querySelector('.r-desc');
+
         items.push({
-            title: row.querySelector('.r-title').value.trim(),
-            subtitle: row.querySelector('.r-subtitle').value.trim(),
-            url: row.querySelector('.r-url').value.trim(),
-            color: row.querySelector('.r-color').value.trim(),
-            image: row.querySelector('.r-image').value.trim(),
-            description: row.querySelector('.r-desc').value.trim()
+            title: titleInp ? titleInp.value.trim() : '',
+            subtitle: subInp ? subInp.value.trim() : '',
+            url: urlInp ? urlInp.value.trim() : '',
+            color: colInp ? colInp.value.trim() : '',
+            image: imgInp ? imgInp.value.trim() : '',
+            description: descInp ? descInp.value.trim() : ''
         });
     });
     
@@ -440,7 +493,13 @@ window.saveDynamicBlockData = async function() {
                 alertBox.innerText = "Repeater data successfully saved to blocks/repeater/ on GitHub!";
             }
             showToast("Repeater block data successfully saved to GitHub!");
-            setTimeout(() => bootstrap.Modal.getInstance(document.getElementById('dynamicBlockModal')).hide(), 1000);
+            setTimeout(() => {
+                const modalEl = document.getElementById('dynamicBlockModal');
+                if (modalEl) {
+                    const modal = bootstrap.Modal.getInstance(modalEl);
+                    if (modal) modal.hide();
+                }
+            }, 1000);
         } else {
             throw new Error();
         }
@@ -457,9 +516,12 @@ window.saveDynamicBlockData = async function() {
 // CODEMIRROR OVERLAY EDITOR (WITH UNMINIFY)
 // ==========================================
 window.openEditor = async function(key, title) {
-    document.getElementById('currentEditKey').value = key;
-    document.getElementById('currentIsGitHubFile').value = "false";
-    document.getElementById('editorOverlayTitle').innerHTML = `Edit: ${title}`;
+    const editKeyEl = document.getElementById('currentEditKey');
+    if (editKeyEl) editKeyEl.value = key;
+    const isGhEl = document.getElementById('currentIsGitHubFile');
+    if (isGhEl) isGhEl.value = "false";
+    const overlayTitleEl = document.getElementById('editorOverlayTitle');
+    if (overlayTitleEl) overlayTitleEl.innerHTML = `Edit: ${title}`;
     
     let mode = 'htmlmixed';
     if (key.includes(':css') || key.endsWith('.css')) mode = 'css';
@@ -506,8 +568,9 @@ window.closeCustomEditor = function() {
 window.saveEditorDataDualStorage = async function() {
     const btn = document.getElementById('btnSaveEditor');
     setButtonLoading(btn, true, "Saving to GitHub...");
-    const key = document.getElementById('currentEditKey').value;
-    const rawContent = window.currentCodeMirrorInstance ? window.currentCodeMirrorInstance.getValue() : document.getElementById('htmlEditor').value;
+    const editKeyEl = document.getElementById('currentEditKey');
+    const key = editKeyEl ? editKeyEl.value : '';
+    const rawContent = window.currentCodeMirrorInstance ? window.currentCodeMirrorInstance.getValue() : (document.getElementById('htmlEditor')?.value || '');
     
     // MINIFY: Mengompres HTML sebelum disimpan ke GitHub
     const minifiedContent = key.startsWith('block:') ? clientSideMinify(rawContent) : rawContent;
