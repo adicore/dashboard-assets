@@ -1,13 +1,10 @@
 /**
  * assets/js/blocks-js.js
  * Frontend JavaScript untuk Management Library Block CMS
- * Dilengkapi Client-Side Minify & Unminify Otomatis untuk File HTML Block
- * serta Dukungan Repeater Data & Search/Filter Real-Time
+ * Terintegrasi dengan Cloudflare D1 (Metadata) & GitHub Repo (Physical Files)
+ * Serta Memiliki Fitur Impor Central Store & Add New Local Block Manual
  */
 
-// ==========================================
-// TRANSLATIONS COLLECTION
-// ==========================================
 const translations = {
     id: {
         visit_site: "Kunjungi Situs",
@@ -37,9 +34,6 @@ const translations = {
     }
 };
 
-// ==========================================
-// CLIENT-SIDE MINIFY & UNMINIFY UTILITIES
-// ==========================================
 function clientSideMinify(html) {
     if (!html) return "";
     return html
@@ -86,9 +80,6 @@ function clientSideUnminify(htmlContent) {
     return formatted.trim();
 }
 
-// ==========================================
-// GLOBAL & UI FUNCTIONS
-// ==========================================
 function changeLanguage(lang) {
     localStorage.setItem('dashboard_lang', lang);
     const langSel = document.getElementById('langSelector');
@@ -166,7 +157,7 @@ async function loadTopbarProfile() {
 }
 
 // ==========================================
-// BLOCK LIBRARY (CORE)
+// BLOCK LIBRARY (CORE) - D1 & GITHUB INTEGRATED
 // ==========================================
 window.availableBlocksList = [];
 
@@ -174,7 +165,7 @@ window.loadBlocks = async function() {
     const container = document.getElementById('blocksContainer');
     if (!container) return;
 
-    container.innerHTML = '<div class="col-12 text-center py-4 text-muted fst-italic"><span class="spinner-border spinner-border-sm me-2"></span>Loading block list...</div>';
+    container.innerHTML = '<div class="col-12 text-center py-4 text-muted fst-italic"><span class="spinner-border spinner-border-sm me-2"></span>Loading block list from D1...</div>';
 
     try {
         const res = await fetch('/api/blocks/list');
@@ -182,7 +173,7 @@ window.loadBlocks = async function() {
         window.availableBlocksList = blocks;
 
         if (!blocks || blocks.length === 0) {
-            container.innerHTML = '<div class="col-12 text-muted small p-4 bg-white border rounded text-center">No block components have been created yet. Click "Add New Block" to get started.</div>';
+            container.innerHTML = '<div class="col-12 text-muted small p-4 bg-white border rounded text-center">No block components have been created yet. Click "Add New Block" or "Browse Central Catalog" to get started.</div>';
             return;
         }
 
@@ -199,7 +190,8 @@ window.loadBlocks = async function() {
         <table class="table table-hover align-middle mb-0" id="blocksTable">
             <thead class="table-light">
                 <tr>
-                    <th scope="col" class="py-3 px-4">Block Name</th>
+                    <th scope="col" class="py-3 px-4">Block Name / ID</th>
+                    <th scope="col" class="py-3">Type / Source</th>
                     <th scope="col" class="py-3">Shortcode</th>
                     <th scope="col" class="py-3 text-end px-4">Action</th>
                 </tr>
@@ -207,14 +199,27 @@ window.loadBlocks = async function() {
             <tbody>
                 `;
 
-        blocks.forEach(bId => {
+        blocks.forEach(b => {
+            const bId = typeof b === 'string' ? b : b.id;
+            const bName = (typeof b === 'object' && b.name) ? b.name : bId;
+            const isCentral = (typeof b === 'object' && b.is_central === 1);
+
             finalHtml += `
                 <tr class="block-row-item" data-block-id="${bId}">
                     <td class="px-4 py-3">
                         <div class="d-flex align-items-center">
                             <i class="bi bi-puzzle text-success me-3 fs-5"></i>
-                            <h6 class="mb-0 fw-bold text-dark block-name">${bId}</h6>
+                            <div>
+                                <h6 class="mb-0 fw-bold text-dark block-name">${bName}</h6>
+                                <code class="small text-muted font-monospace">${bId}</code>
+                            </div>
                         </div>
+                    </td>
+                    <td class="py-3">
+                        ${isCentral ? 
+                            '<span class="badge bg-success-subtle text-success border border-success-subtle"><i class="bi bi-cloud-check me-1"></i>Central Import</span>' : 
+                            '<span class="badge bg-info-subtle text-info border border-info-subtle"><i class="bi bi-person-check me-1"></i>Custom Local</span>'
+                        }
                     </td>
                     <td class="py-3">
                         <span class="badge bg-light text-dark border user-select-all" style="font-family: monospace; font-size: 0.85rem;">
@@ -223,7 +228,7 @@ window.loadBlocks = async function() {
                     </td>
                     <td class="text-end px-4 py-3">
                         <div class="btn-group" role="group">
-                            <button class="btn btn-sm btn-outline-primary" onclick="openEditor('block:${bId}', 'Block: ${bId}')" title="Edit HTML">
+                            <button class="btn btn-sm btn-outline-primary" onclick="openEditor('block:${bId}', 'Block: ${bName}')" title="Edit HTML">
                                 <i class="bi bi-code-slash me-1"></i> HTML
                             </button>
                             <button class="btn btn-sm btn-outline-info" onclick="openDynamicBlockModal('${bId}')" title="Edit Repeater">
@@ -249,7 +254,7 @@ window.loadBlocks = async function() {
         container.innerHTML = finalHtml;
 
     } catch (err) {
-        container.innerHTML = '<div class="col-12 text-danger small p-3 bg-white border rounded">Failed to load block list.</div>';
+        container.innerHTML = '<div class="col-12 text-danger small p-3 bg-white border rounded">Failed to load block list from D1.</div>';
     }
 };
 
@@ -266,34 +271,147 @@ window.filterBlocksList = function() {
     });
 };
 
+// ==========================================
+// CENTRAL CATALOG STORE IMPORT
+// ==========================================
+window.openCentralCatalogModal = async function() {
+    const catalogModalEl = document.getElementById('centralCatalogModal');
+    if (!catalogModalEl) return;
+    
+    const modal = bootstrap.Modal.getOrCreateInstance(catalogModalEl);
+    modal.show();
+
+    const catalogGrid = document.getElementById('centralCatalogGrid');
+    catalogGrid.innerHTML = '<div class="col-12 text-center py-5 text-muted"><span class="spinner-border spinner-border-sm me-2"></span>Connecting to Central Store Server...</div>';
+
+    try {
+        const res = await fetch('/api/central/blocks/catalog');
+        if (!res.ok) throw new Error("Gagal terhubung ke Server Pusat");
+
+        const catalog = await res.json();
+        
+        // Cek ID mana saja yang sudah diimpor
+        const installedIds = (window.availableBlocksList || []).map(b => typeof b === 'string' ? b : b.id);
+
+        if (!catalog || catalog.length === 0) {
+            catalogGrid.innerHTML = '<div class="col-12 text-center py-4 text-muted">Belum ada komponen block yang dipublikasikan di Admin Pusat.</div>';
+            return;
+        }
+
+        let html = '';
+        catalog.forEach(item => {
+            const isInstalled = installedIds.includes(item.id);
+
+            html += `
+            <div class="col-md-6 col-lg-4 mb-3">
+                <div class="card h-100 border shadow-sm rounded-3 overflow-hidden">
+                    <div class="bg-light text-center py-4 border-bottom position-relative">
+                        ${item.preview_img ? 
+                            `<img src="${item.preview_img}" alt="${item.name}" class="img-fluid" style="max-height: 120px; object-fit: contain;">` : 
+                            `<i class="bi bi-puzzle text-primary" style="font-size: 3rem;"></i>`
+                        }
+                        <span class="badge bg-dark position-absolute top-0 start-0 m-2">${item.category || 'General'}</span>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="fw-bold text-dark mb-1">${item.name || item.id}</h6>
+                        <code class="small text-muted font-monospace d-block mb-2">${item.id}</code>
+                        <p class="small text-secondary mb-0">${item.description || 'Master block modular siap pakai dari Admin Pusat.'}</p>
+                    </div>
+                    <div class="card-footer bg-white border-top-0 d-flex justify-content-between align-items-center pb-3">
+                        ${isInstalled ? 
+                            `<button class="btn btn-sm btn-success w-100" disabled><i class="bi bi-check-circle me-1"></i> Already Installed</button>` : 
+                            `<button class="btn btn-sm btn-primary w-100" id="btnImportCentral-${item.id}" onclick="importCentralBlock('${item.id}')">
+                                <i class="bi bi-cloud-download me-1"></i> Import Block
+                            </button>`
+                        }
+                    </div>
+                </div>
+            </div>`;
+        });
+
+        catalogGrid.innerHTML = html;
+    } catch (err) {
+        catalogGrid.innerHTML = `<div class="col-12"><div class="alert alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>${err.message}</div></div>`;
+    }
+};
+
+window.importCentralBlock = async function(blockId) {
+    const btn = document.getElementById(`btnImportCentral-${blockId}`);
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Importing...';
+    }
+
+    try {
+        const res = await fetch('/api/central/blocks/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ blockId })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(`Block "${blockId}" successfully imported to D1 & GitHub!`);
+            if (btn) {
+                btn.className = 'btn btn-sm btn-success w-100';
+                btn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Installed';
+            }
+            loadBlocks();
+        } else {
+            throw new Error(data.message || "Failed to import block.");
+        }
+    } catch (err) {
+        showToast("Error importing block: " + err.message, "danger");
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-cloud-download me-1"></i> Import Block';
+        }
+    }
+};
+
+// ==========================================
+// ADD NEW LOCAL CUSTOM BLOCK (MANUAL)
+// ==========================================
 window.createNewBlock = async function() {
     const btn = document.getElementById('btnSaveNewBlock');
     setButtonLoading(btn, true, "Creating Block...");
-    const inpEl = document.getElementById('inpNewBlockId');
-    const bId = inpEl ? inpEl.value.trim().toLowerCase().replace(/[^a-z0-9-]/g,'-') : '';
+    const inpId = document.getElementById('inpNewBlockId');
+    const inpName = document.getElementById('inpNewBlockName');
+    const inpCat = document.getElementById('inpNewBlockCategory');
     
-    if(!bId) {
+    const bId = inpId ? inpId.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-') : '';
+    const bName = inpName ? inpName.value.trim() : bId;
+    const bCat = inpCat ? inpCat.value : 'general';
+
+    if (!bId) {
         setButtonLoading(btn, false);
-        return showToast("Invalid Block ID!", "warning");
+        return showToast("Unique Block ID is required!", "warning");
     }
-    
-    const initialHtml = clientSideMinify(`<div class="container py-4">\n    <h3>${bId}</h3>\n</div>`);
+
+    const initialHtml = clientSideMinify(`<div class="container py-4">\n    <h3>${bName}</h3>\n</div>`);
 
     try {
-        const res = await fetch('/api/blocks/save-html', {
+        const res = await fetch('/api/blocks/create', {
             method: 'POST',
             headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ blockId: bId, html: initialHtml })
+            body: JSON.stringify({ 
+                blockId: bId, 
+                name: bName, 
+                category: bCat, 
+                html: initialHtml 
+            })
         });
+
         setButtonLoading(btn, false);
         if (res.ok) {
-            showToast("New block component successfully created in blocks/ folder on GitHub!");
+            showToast("Custom block successfully created in D1 & GitHub!");
             const modalEl = document.getElementById('addBlockModal');
             if (modalEl) {
                 const modal = bootstrap.Modal.getInstance(modalEl);
                 if (modal) modal.hide();
             }
-            if (inpEl) inpEl.value = '';
+            if (inpId) inpId.value = '';
+            if (inpName) inpName.value = '';
             loadBlocks();
         } else {
             showToast("Failed to create new block.", "danger");
@@ -305,13 +423,13 @@ window.createNewBlock = async function() {
 };
 
 window.deleteBlock = async function(bId) {
-    if(!confirm(`Are you sure you want to delete block "${bId}"?`)) return;
+    if (!confirm(`Are you sure you want to delete block "${bId}"? This will delete record from D1 and GitHub files.`)) return;
     const bulkModalEl = document.getElementById('bulkProcessModal');
     let bulkModal = null;
     if (bulkModalEl) {
         bulkModal = new bootstrap.Modal(bulkModalEl);
         const titleEl = document.getElementById('bulkProcessTitle');
-        if (titleEl) titleEl.innerText = "Deleting Block...";
+        if (titleEl) titleEl.innerText = "Deleting Block from D1 & GitHub...";
         bulkModal.show();
     }
     
@@ -323,7 +441,7 @@ window.deleteBlock = async function(bId) {
         });
         if (bulkModal) bulkModal.hide();
         if (res.ok) {
-            showToast("Block successfully deleted from blocks/ and blocks/repeater/ folders!");
+            showToast("Block successfully deleted from D1 and GitHub!");
             loadBlocks();
         } else {
             showToast("Failed to delete block.", "danger");
@@ -335,10 +453,10 @@ window.deleteBlock = async function(bId) {
 };
 
 window.renameBlock = async function(oldId) {
-    const newId = prompt(`Enter new ID/Name for block "${oldId}":`, oldId);
+    const newId = prompt(`Enter new ID for block "${oldId}":`, oldId);
     if (!newId || newId.trim() === oldId) return;
     
-    const cleanNewId = newId.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
+    const cleanNewId = newId.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
     if (!cleanNewId) return showToast("Invalid block ID!", "warning");
 
     const bulkModalEl = document.getElementById('bulkProcessModal');
@@ -346,7 +464,7 @@ window.renameBlock = async function(oldId) {
     if (bulkModalEl) {
         bulkModal = new bootstrap.Modal(bulkModalEl);
         const titleEl = document.getElementById('bulkProcessTitle');
-        if (titleEl) titleEl.innerText = "Renaming Block...";
+        if (titleEl) titleEl.innerText = "Renaming Block on D1 & GitHub...";
         bulkModal.show();
     }
 
@@ -359,10 +477,10 @@ window.renameBlock = async function(oldId) {
         if (bulkModal) bulkModal.hide();
         
         if (res.ok) {
-            showToast("Block name successfully changed on GitHub!");
+            showToast("Block name successfully updated on D1 and GitHub!");
             loadBlocks();
         } else {
-            showToast("Failed to change block name.", "danger");
+            showToast("Failed to rename block.", "danger");
         }
     } catch(e) {
         if (bulkModal) bulkModal.hide();
@@ -476,7 +594,7 @@ window.saveDynamicBlockData = async function() {
     const alertBox = document.getElementById('repeaterAlert');
     if(alertBox) {
         alertBox.className = "alert alert-info py-1 px-3 mb-0 small";
-        alertBox.innerText = "Saving data to blocks/repeater/ folder on GitHub...";
+        alertBox.innerText = "Saving repeater JSON to GitHub and updating D1...";
         alertBox.classList.remove('d-none');
     }
     
@@ -490,7 +608,7 @@ window.saveDynamicBlockData = async function() {
         if(res.ok) {
             if(alertBox) {
                 alertBox.className = "alert alert-success py-1 px-3 mb-0 small";
-                alertBox.innerText = "Repeater data successfully saved to blocks/repeater/ on GitHub!";
+                alertBox.innerText = "Repeater data saved!";
             }
             showToast("Repeater block data successfully saved to GitHub!");
             setTimeout(() => {
@@ -513,7 +631,7 @@ window.saveDynamicBlockData = async function() {
 };
 
 // ==========================================
-// CODEMIRROR OVERLAY EDITOR (WITH UNMINIFY)
+// CODEMIRROR OVERLAY EDITOR
 // ==========================================
 window.openEditor = async function(key, title) {
     const editKeyEl = document.getElementById('currentEditKey');
@@ -535,14 +653,18 @@ window.openEditor = async function(key, title) {
     if (ed) ed.value = "Loading data from server...";
     
     let content = "Failed to load content.";
+    const blockId = key.replace('block:', '');
+
     try {
-        const res = await fetch('/api/kv?key=' + encodeURIComponent(key));
-        if (res.ok) content = await res.text();
+        const res = await fetch('/api/blocks/detail?id=' + encodeURIComponent(blockId));
+        if (res.ok) {
+            const data = await res.json();
+            content = data.html || "";
+        }
     } catch(e) {
         content = "Failed to load content.";
     }
     
-    // UNMINIFY: Merapikan HTML jika ditarik dari GitHub agar mudah dibaca di CodeMirror
     if (mode === 'htmlmixed' && content && content !== "Failed to load content.") {
         content = clientSideUnminify(content);
     }
@@ -572,7 +694,6 @@ window.saveEditorDataDualStorage = async function() {
     const key = editKeyEl ? editKeyEl.value : '';
     const rawContent = window.currentCodeMirrorInstance ? window.currentCodeMirrorInstance.getValue() : (document.getElementById('htmlEditor')?.value || '');
     
-    // MINIFY: Mengompres HTML sebelum disimpan ke GitHub
     const minifiedContent = key.startsWith('block:') ? clientSideMinify(rawContent) : rawContent;
 
     try {
@@ -594,7 +715,7 @@ window.saveEditorDataDualStorage = async function() {
 
         if(res.ok){
             setButtonLoading(btn, false);
-            showToast("Block HTML successfully minified and saved to blocks/ on GitHub!");
+            showToast("Block HTML successfully minified and saved to GitHub!");
             setTimeout(() => {
                 closeCustomEditor();
                 loadBlocks();
