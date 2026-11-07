@@ -288,7 +288,10 @@ window.openCentralCatalogModal = async function() {
         const res = await fetch('/api/central/blocks/catalog');
         if (!res.ok) throw new Error("Gagal terhubung ke Server Pusat");
 
-        const catalog = await res.json();
+        //const catalog = await res.json();
+        const catalogData = await res.json();
+        // Mendukung format Array langsung maupun format Objek pembungkus { blocks: [...] }
+        const catalog = Array.isArray(catalogData) ? catalogData : (catalogData.blocks || catalogData.data || []);
         
         // Cek ID mana saja yang sudah diimpor
         const installedIds = (window.availableBlocksList || []).map(b => typeof b === 'string' ? b : b.id);
